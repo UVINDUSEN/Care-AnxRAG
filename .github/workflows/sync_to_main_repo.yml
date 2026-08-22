@@ -1,0 +1,75 @@
+name: Sync to Target Repo
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Repository
+        uses: actions/checkout@v4
+
+      - name: Clone Target Repository
+        env:
+          TARGET_REPO_PAT: ${{ secrets.TARGET_REPO_PAT }}
+        run: |
+          git clone https://x-access-token:${TARGET_REPO_PAT}@github.com/dulhara79/R26-DS-012.git target-repo
+
+      - name: Sync Files
+        run: |
+          TARGET_DIR="target-repo/Multimodal Risk Fusion and Retrieval-Augmented Clinical Decision Support/CARE-AnxRAG"
+          rm -rf "$TARGET_DIR"
+          mkdir -p "$TARGET_DIR"
+          
+          rsync -av . "$TARGET_DIR" \
+            --exclude .git \
+            --exclude target-repo \
+            --exclude .github \
+            --exclude .venv \
+            --exclude var \
+            --exclude dist \
+            --exclude .pytest_cache \
+            --exclude .ruff_cache \
+            --exclude "*.sqlite3" \
+            --exclude "*.sqlite3-shm" \
+            --exclude "*.sqlite3-wal"
+
+      - name: Commit and Push Changes
+        run: |
+          cd target-repo
+          
+          # Configure Git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check out target branch (resetting it if it already exists locally)
+          git checkout -B sync/care-anxrag
+          
+          # Check for changes
+          git add -A
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes detected. Skipping commit and push."
+            echo "has_changes=false" >> $GITHUB_ENV
+          else
+            git commit -m "Sync CARE-AnxRAG changes from source main branch"
+            git push -u origin sync/care-anxrag --force
+            echo "has_changes=true" >> $GITHUB_ENV
+          fi
+
+      - name: Create Pull Request
+        if: env.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TARGET_REPO_PAT }}
+        run: |
+          cd target-repo
+          gh pr create \
+            --title "Sync CARE-AnxRAG changes" \
+            --body "Automated pull request to sync CARE-AnxRAG changes from source repository's main branch." \
+            --base main \
+            --head sync/care-anxrag || echo "PR already exists or could not be created."
