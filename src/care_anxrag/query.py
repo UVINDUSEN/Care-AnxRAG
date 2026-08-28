@@ -27,6 +27,15 @@ _SUBTYPE_PATTERNS: dict[str, tuple[str, ...]] = {
     "health_anxiety": ("health anxiety", "illness anxiety", "hypochondria"),
 }
 
+_TREATMENT_PATTERNS: dict[str, tuple[str, ...]] = {
+    "cognitive_behavioral_therapy": (
+        " cbt ",
+        "cognitive behavioral therapy",
+        "cognitive behavioural therapy",
+        "cognitive-behavioral therapy",
+        "cognitive-behavioural therapy",
+    ),
+}
 
 class QueryAnalyzer:
     def analyze(self, query: str, safety_level: SafetyLevel = SafetyLevel.NORMAL, safety_reason: str | None = None) -> QueryAnalysis:
@@ -36,6 +45,11 @@ class QueryAnalyzer:
             subtype
             for subtype, patterns in _SUBTYPE_PATTERNS.items()
             if any(pattern in padded for pattern in patterns)
+        ]
+        treatments = [
+    treatment
+    for treatment, patterns in _TREATMENT_PATTERNS.items()
+    if any(pattern in padded for pattern in patterns)   
         ]
         intent = self._intent(normalized)
         wants_recent = bool(
@@ -62,6 +76,7 @@ class QueryAnalyzer:
             normalized_query=normalized,
             intent=intent,
             anxiety_subtypes=subtypes,
+            treatments=treatments,
             population=population,
             wants_recent=wants_recent,
             preferred_layers=preferred_layers,

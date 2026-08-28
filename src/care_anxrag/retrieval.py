@@ -368,3 +368,16 @@ class CareRetriever:
         if unresolved_conflict > self.settings.unresolved_conflict_threshold:
             return True, "unresolved_high_confidence_evidence_conflict"
         return False, None
+
+def test_query_analyzer_identifies_cbt_treatment() -> None:
+    analyzer = QueryAnalyzer()
+
+    analysis = analyzer.analyze(
+        "What evidence supports CBT for generalized anxiety disorder?"
+    )
+
+    data = analysis.model_dump()
+
+    assert data.get("treatments") == [
+        "cognitive_behavioral_therapy"
+    ]

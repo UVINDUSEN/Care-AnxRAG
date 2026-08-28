@@ -97,3 +97,15 @@ def test_applicability_strongly_penalizes_wrong_anxiety_subtype() -> None:
 
     assert gad_score == 1.0
     assert social_anxiety_score <= 0.50
+def test_query_analyzer_identifies_cbt_treatment() -> None:
+    analyzer = QueryAnalyzer()
+
+    analysis = analyzer.analyze(
+        "What evidence supports CBT for generalized anxiety disorder?"
+    )
+
+    data = analysis.model_dump()
+
+    assert data.get("treatments") == [
+        "cognitive_behavioral_therapy"
+    ]
