@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-
 from conftest import write_document
-
+from care_anxrag.evidence import applicability_score
+from care_anxrag.models import KnowledgeLayer
+from care_anxrag.query import QueryAnalyzer
 
 GAD = """
 # Generalized anxiety disorder
@@ -64,3 +65,35 @@ def test_out_of_scope_query_abstains(runtime, project: Path) -> None:
     runtime.ingestion.sync(source_ids=["test_core"], force=True)
     result = runtime.rag.answer("How do I repair a diesel fuel injector?")
     assert result.abstained
+def test_applicability_strongly_penalizes_wrong_anxiety_subtype() -> None:
+    analyzer = QueryAnalyzer()
+
+    query = analyzer.analyze(
+        "What evidence supports CBT for generalized anxiety disorder?"
+    )
+
+    gad_score = applicability_score(
+        topics=[
+            "anxiety",
+            "generalized_anxiety_disorder",
+            "Cognitive Behavioral Therapy",
+        ],
+        query=query,
+        layer=KnowledgeLayer.RESEARCH_FRONTIER,
+    )
+
+    social_anxiety_score = applicability_score(
+        topics=[
+            "anxiety",
+            "social_anxiety_disorder",
+            "Cognitive Behavioral Therapy",
+        ],
+        query=query,
+        layer=KnowledgeLayer.RESEARCH_FRONTIER,
+    )
+
+    print("GAD applicability:", gad_score)
+    print("Wrong subtype applicability:", social_anxiety_score)
+
+    assert gad_score == 1.0
+    assert social_anxiety_score <= 0.50
