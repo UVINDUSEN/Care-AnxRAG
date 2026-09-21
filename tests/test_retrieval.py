@@ -302,3 +302,159 @@ def test_care_score_penalizes_explicit_wrong_treatment(runtime) -> None:
     print("MCT CARE:", mct_score)
 
     assert mct_score <= cbt_score * 0.70
+
+
+
+def test_query_analyzer_identifies_multiple_supported_treatment_families() -> None:
+    analyzer = QueryAnalyzer()
+
+    analysis = analyzer.analyze(
+        "Compare CBT and metacognitive therapy for GAD"
+    )
+
+    assert set(analysis.treatments) == {
+        "cognitive_behavioral_therapy",
+        "metacognitive_therapy",
+    }
+    assert analysis.anxiety_subtypes == [
+        "generalized_anxiety_disorder"
+    ]
+
+
+def test_care_score_penalizes_explicit_population_mismatch(runtime) -> None:
+    from types import SimpleNamespace
+
+    analyzer = QueryAnalyzer()
+    query = analyzer.analyze(
+        "What evidence supports CBT for older adults with GAD?"
+    )
+
+    common = {
+        "dense_score": 0.70,
+        "lexical_score": 0.90,
+        "rrf_normalized": 0.90,
+        "rerank_score": 0.90,
+        "freshness_score": 0.80,
+        "applicability_score": 1.0,
+    }
+
+    matching = SimpleNamespace(
+        **common,
+        chunk=SimpleNamespace(
+            authority_score=0.90,
+            evidence_score=0.90,
+            title="CBT for GAD in older adults",
+            section_heading="Abstract",
+            text=(
+                "Adults aged 65 years and above with generalized anxiety "
+                "disorder received cognitive behavioural therapy."
+            ),
+        ),
+    )
+    mismatch = SimpleNamespace(
+        **common,
+        chunk=SimpleNamespace(
+            authority_score=0.90,
+            evidence_score=0.90,
+            title="CBT for GAD in adolescents",
+            section_heading="Abstract",
+            text=(
+                "Adolescents with generalized anxiety disorder received "
+                "cognitive behavioural therapy."
+            ),
+        ),
+    )
+
+    matching_score = runtime.retriever._care_score(
+        matching,
+        query,
+    )
+    mismatch_score = runtime.retriever._care_score(
+        mismatch,
+        query,
+    )
+
+    assert mismatch_score < matching_score
+
+
+def test_abstention_requires_joint_subtype_and_treatment_support(runtime) -> None:
+    from types import SimpleNamespace
+
+    analysis = QueryAnalyzer().analyze(
+        "What evidence supports CBT for generalized anxiety disorder?"
+    )
+
+    def hit(
+        source_id: str,
+        title: str,
+        text: str,
+        topics: list[str],
+    ):
+        return SimpleNamespace(
+            relevance_score=0.90,
+            care_score=0.90,
+            chunk=SimpleNamespace(
+                source_id=source_id,
+                topics=topics,
+                title=title,
+                section_heading="Abstract",
+                text=text,
+            ),
+        )
+
+    split_evidence = [
+        hit(
+            "source-gad-mct",
+            "Metacognitive therapy for GAD",
+            "Metacognitive therapy was evaluated in generalized anxiety disorder.",
+            ["anxiety", "generalized_anxiety_disorder"],
+        ),
+        hit(
+            "source-social-cbt",
+            "CBT for social anxiety",
+            "Cognitive behavioural therapy was evaluated in social anxiety disorder.",
+            ["anxiety", "social_anxiety_disorder"],
+        ),
+    ]
+
+    should_abstain, reason = runtime.retriever._abstention(
+        split_evidence,
+        confidence=0.90,
+        unresolved_conflict=0.0,
+        analysis=analysis,
+    )
+
+    assert should_abstain
+    assert reason == "insufficient_direct_evidence_for_requested_treatment"
+
+
+def test_abstention_accepts_direct_subtype_and_treatment_support(runtime) -> None:
+    from types import SimpleNamespace
+
+    analysis = QueryAnalyzer().analyze(
+        "What evidence supports CBT for generalized anxiety disorder?"
+    )
+    direct_hit = SimpleNamespace(
+        relevance_score=0.90,
+        care_score=0.90,
+        chunk=SimpleNamespace(
+            source_id="source-gad-cbt",
+            topics=["anxiety", "generalized_anxiety_disorder"],
+            title="CBT for GAD",
+            section_heading="Abstract",
+            text=(
+                "Cognitive behavioural therapy was evaluated in adults with "
+                "generalized anxiety disorder."
+            ),
+        ),
+    )
+
+    should_abstain, reason = runtime.retriever._abstention(
+        [direct_hit],
+        confidence=0.90,
+        unresolved_conflict=0.0,
+        analysis=analysis,
+    )
+
+    assert not should_abstain
+    assert reason is None
