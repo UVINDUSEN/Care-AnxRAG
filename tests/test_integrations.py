@@ -137,6 +137,7 @@ def test_ollama_generation_contract_and_citations(monkeypatch) -> None:
         query_analysis=QueryAnalysis(
             original_query="What treatment is used?",
             normalized_query="what treatment is used?",
+            retrieval_query="what treatment is used?",
             intent=QueryIntent.TREATMENT,
             preferred_layers=[KnowledgeLayer.CLINICAL_CORE],
             safety_level=SafetyLevel.NORMAL,
@@ -168,6 +169,7 @@ def test_ollama_repair_request_retains_original_evidence(monkeypatch) -> None:
         query_analysis=QueryAnalysis(
             original_query="What treatment is used?",
             normalized_query="what treatment is used?",
+            retrieval_query="what treatment is used?",
             intent=QueryIntent.TREATMENT,
             preferred_layers=[KnowledgeLayer.CLINICAL_CORE],
             safety_level=SafetyLevel.NORMAL,
