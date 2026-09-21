@@ -284,9 +284,9 @@ class CareRetriever:
         return "\n".join(
             value
             for value in [
-                hit.chunk.title,
-                hit.chunk.section_heading,
-                hit.chunk.text,
+                getattr(hit.chunk, "title", ""),
+                getattr(hit.chunk, "section_heading", ""),
+                getattr(hit.chunk, "text", ""),
             ]
             if value
         )
