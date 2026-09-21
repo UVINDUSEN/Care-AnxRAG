@@ -453,17 +453,21 @@ class CareRetriever:
                 getattr(analysis, "anxiety_subtypes", []) or []
             )
             requested_population = getattr(analysis, "population", None)
-            has_direct_support = any(
-                supports_explicit_treatment_query(
-                    requested_subtypes,
-                    requested_treatments,
-                    requested_population,
-                    hit.chunk.topics,
-                    self._clinical_text(hit),
+            unsupported_treatments = [
+                treatment
+                for treatment in requested_treatments
+                if not any(
+                    supports_explicit_treatment_query(
+                        requested_subtypes,
+                        {treatment},
+                        requested_population,
+                        hit.chunk.topics,
+                        self._clinical_text(hit),
+                    )
+                    for hit in hits
                 )
-                for hit in hits
-            )
-            if not has_direct_support:
+            ]
+            if unsupported_treatments:
                 return True, "insufficient_direct_evidence_for_requested_treatment"
 
         return False, None
