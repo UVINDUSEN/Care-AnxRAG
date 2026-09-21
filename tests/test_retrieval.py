@@ -458,3 +458,61 @@ def test_abstention_accepts_direct_subtype_and_treatment_support(runtime) -> Non
 
     assert not should_abstain
     assert reason is None
+
+
+
+def test_abstention_requires_support_for_each_requested_treatment(runtime) -> None:
+    from types import SimpleNamespace
+
+    analysis = QueryAnalyzer().analyze(
+        "Compare CBT and metacognitive therapy for GAD"
+    )
+
+    def hit(source_id: str, title: str, text: str):
+        return SimpleNamespace(
+            relevance_score=0.90,
+            care_score=0.90,
+            chunk=SimpleNamespace(
+                source_id=source_id,
+                topics=["anxiety", "generalized_anxiety_disorder"],
+                title=title,
+                section_heading="Abstract",
+                text=text,
+            ),
+        )
+
+    cbt_only = [
+        hit(
+            "source-gad-cbt",
+            "CBT for GAD",
+            "Cognitive behavioural therapy was evaluated in generalized anxiety disorder.",
+        )
+    ]
+
+    should_abstain, reason = runtime.retriever._abstention(
+        cbt_only,
+        confidence=0.90,
+        unresolved_conflict=0.0,
+        analysis=analysis,
+    )
+
+    assert should_abstain
+    assert reason == "insufficient_direct_evidence_for_requested_treatment"
+
+    both_treatments = cbt_only + [
+        hit(
+            "source-gad-mct",
+            "Metacognitive therapy for GAD",
+            "Metacognitive therapy was evaluated in generalized anxiety disorder.",
+        )
+    ]
+
+    should_abstain, reason = runtime.retriever._abstention(
+        both_treatments,
+        confidence=0.90,
+        unresolved_conflict=0.0,
+        analysis=analysis,
+    )
+
+    assert not should_abstain
+    assert reason is None
