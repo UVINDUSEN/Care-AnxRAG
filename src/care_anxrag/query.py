@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from .clinical_match import extract_treatment_concepts
 from .models import KnowledgeLayer, QueryAnalysis, QueryIntent, SafetyLevel
 from .util import normalize_whitespace
 
@@ -48,17 +49,6 @@ _SUBTYPE_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-_TREATMENT_PATTERNS: dict[str, tuple[str, ...]] = {
-    "cognitive_behavioral_therapy": (
-        " cbt ",
-        "cognitive behavioral therapy",
-        "cognitive behavioural therapy",
-        "cognitive-behavioral therapy",
-        "cognitive-behavioural therapy",
-    ),
-}
-
-
 class QueryAnalyzer:
     def analyze(
         self,
@@ -92,11 +82,7 @@ class QueryAnalyzer:
             if any(pattern in padded for pattern in patterns)
         ]
 
-        treatments = [
-            treatment
-            for treatment, patterns in _TREATMENT_PATTERNS.items()
-            if any(pattern in padded for pattern in patterns)
-        ]
+        treatments = sorted(extract_treatment_concepts(normalized))
 
         intent = self._intent(normalized)
 
@@ -128,7 +114,7 @@ class QueryAnalyzer:
             normalized,
         ):
             population = "perinatal"
-        elif re.search(r"\b(older adult|elderly|senior)\b", normalized):
+        elif re.search(r"\b(older adults?|elderly|seniors?)\b", normalized):
             population = "older_adults"
         elif re.search(r"\badult\b", normalized):
             population = "adults"

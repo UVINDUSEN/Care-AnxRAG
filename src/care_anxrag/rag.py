@@ -133,6 +133,7 @@ class CareAnxRag:
             "retrieval_confidence_below_threshold": "The system could not reach its minimum evidence-confidence threshold.",
             "insufficient_source_diversity": "The answer was supported by too few independent sources.",
             "unresolved_high_confidence_evidence_conflict": "High-quality retrieved sources disagreed and the conflict could not be resolved safely.",
+            "insufficient_direct_evidence_for_requested_treatment": "The retrieved evidence did not directly support the requested treatment together with the requested clinical context.",
         }
         detail = reason_map.get(reason or "", "The available evidence was insufficient or uncertain.")
         return (

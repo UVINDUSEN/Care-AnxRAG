@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Sequence
 
+from .clinical_match import (
+    population_compatibility,
+    supports_explicit_treatment_query,
+    treatment_compatibility,
+)
 from .config import Settings
 from .db import Database
 from .embeddings import Embedder
@@ -142,6 +147,7 @@ class CareRetriever:
             selected,
             confidence,
             unresolved_conflict,
+            analysis,
         )
         evidence_dates = [
             hit.chunk.updated_at or hit.chunk.published_at
@@ -274,25 +280,30 @@ class CareRetriever:
         )
 
     @staticmethod
-    def _treatment_compatibility_adjustment(hit, analysis) -> float:
-        requested_treatments = set(
-            getattr(analysis, "treatments", []) or []
+    def _clinical_text(hit: SearchHit) -> str:
+        return "\n".join(
+            value
+            for value in [
+                getattr(hit.chunk, "title", ""),
+                getattr(hit.chunk, "section_heading", ""),
+                getattr(hit.chunk, "text", ""),
+            ]
+            if value
         )
 
-        if not requested_treatments:
-            return 1.0
+    @classmethod
+    def _treatment_compatibility_adjustment(cls, hit: SearchHit, analysis) -> float:
+        return treatment_compatibility(
+            getattr(analysis, "treatments", []) or [],
+            cls._clinical_text(hit),
+        )
 
-        title = (
-            getattr(hit.chunk, "title", "") or ""
-        ).lower().replace("-", " ")
-
-        if (
-            "cognitive_behavioral_therapy" in requested_treatments
-            and "metacognitive therapy" in title
-        ):
-            return 0.65
-
-        return 1.0
+    @classmethod
+    def _population_compatibility_adjustment(cls, hit: SearchHit, analysis) -> float:
+        return population_compatibility(
+            getattr(analysis, "population", None),
+            cls._clinical_text(hit),
+        )
 
     def _care_score(self, hit: SearchHit, analysis=None) -> float:
         weights = self.settings.weights
@@ -312,20 +323,24 @@ class CareRetriever:
             hit.applicability_score
         )
 
-        treatment_compatibility = 1.0
+        treatment_adjustment = 1.0
+        population_adjustment = 1.0
 
         if analysis is not None:
-            treatment_compatibility = (
-                self._treatment_compatibility_adjustment(
-                    hit,
-                    analysis,
-                )
+            treatment_adjustment = self._treatment_compatibility_adjustment(
+                hit,
+                analysis,
+            )
+            population_adjustment = self._population_compatibility_adjustment(
+                hit,
+                analysis,
             )
 
         return clamp(
             base_score
             * subtype_compatibility
-            * treatment_compatibility
+            * treatment_adjustment
+            * population_adjustment
         )
 
     def _resolve_conflicts(
@@ -417,6 +432,7 @@ class CareRetriever:
         hits: Sequence[SearchHit],
         confidence: float,
         unresolved_conflict: float,
+        analysis,
     ) -> tuple[bool, str | None]:
         if not hits:
             return True, "no_active_evidence_after_conflict_resolution"
@@ -430,17 +446,28 @@ class CareRetriever:
             return True, "insufficient_source_diversity"
         if unresolved_conflict > self.settings.unresolved_conflict_threshold:
             return True, "unresolved_high_confidence_evidence_conflict"
+
+        requested_treatments = set(getattr(analysis, "treatments", []) or [])
+        if requested_treatments:
+            requested_subtypes = set(
+                getattr(analysis, "anxiety_subtypes", []) or []
+            )
+            requested_population = getattr(analysis, "population", None)
+            unsupported_treatments = [
+                treatment
+                for treatment in requested_treatments
+                if not any(
+                    supports_explicit_treatment_query(
+                        requested_subtypes,
+                        {treatment},
+                        requested_population,
+                        hit.chunk.topics,
+                        self._clinical_text(hit),
+                    )
+                    for hit in hits
+                )
+            ]
+            if unsupported_treatments:
+                return True, "insufficient_direct_evidence_for_requested_treatment"
+
         return False, None
-
-def test_query_analyzer_identifies_cbt_treatment() -> None:
-    analyzer = QueryAnalyzer()
-
-    analysis = analyzer.analyze(
-        "What evidence supports CBT for generalized anxiety disorder?"
-    )
-
-    data = analysis.model_dump()
-
-    assert data.get("treatments") == [
-        "cognitive_behavioral_therapy"
-    ]
