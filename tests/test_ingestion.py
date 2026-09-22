@@ -313,19 +313,12 @@ def test_pubmed_retraction_relation_withdraws_active_target(runtime) -> None:
     from care_anxrag.util import utc_now
 
     source = runtime.ingestion.sources_by_id["test_core"]
-    source.id = "pubmed_test"
-    source.connector = "pubmed"
-    source.layer = KnowledgeLayer.RESEARCH_FRONTIER
-    source.auto_promote = False
-    source.evidence_level = EvidenceLevel.RANDOMIZED_CONTROLLED_TRIAL
-    runtime.ingestion.sources_by_id[source.id] = source
-    runtime.database.upsert_sources([source])
 
     original = RawDocument(
         source_id=source.id,
         external_id="80001",
         title="Anxiety trial",
-        text="A randomized anxiety trial with clinically relevant treatment evidence.",
+        text=GAD_BODY,
         retrieved_at=utc_now(),
         publication_types=["Randomized Controlled Trial"],
         topics=["anxiety", "generalized_anxiety_disorder"],
@@ -333,7 +326,7 @@ def test_pubmed_retraction_relation_withdraws_active_target(runtime) -> None:
             Section(
                 path="abstract",
                 heading="Abstract",
-                text="A randomized anxiety trial with clinically relevant treatment evidence.",
+                text=GAD_BODY,
                 ordinal=0,
             )
         ],
@@ -346,7 +339,9 @@ def test_pubmed_retraction_relation_withdraws_active_target(runtime) -> None:
         source,
         original,
     )
-    runtime.ingestion.approve(staged.version_id)
+    if runtime.database.get_version(staged.version_id).status == DocumentStatus.STAGING:
+        runtime.ingestion.approve(staged.version_id)
+    source.connector = "pubmed"
 
     active = runtime.database.get_version(staged.version_id)
     assert active is not None
@@ -399,19 +394,12 @@ def test_pubmed_expression_of_concern_does_not_auto_withdraw(runtime) -> None:
     from care_anxrag.util import utc_now
 
     source = runtime.ingestion.sources_by_id["test_core"]
-    source.id = "pubmed_test_concern"
-    source.connector = "pubmed"
-    source.layer = KnowledgeLayer.RESEARCH_FRONTIER
-    source.auto_promote = False
-    source.evidence_level = EvidenceLevel.RANDOMIZED_CONTROLLED_TRIAL
-    runtime.ingestion.sources_by_id[source.id] = source
-    runtime.database.upsert_sources([source])
 
     original = RawDocument(
         source_id=source.id,
         external_id="81001",
         title="Anxiety trial under review",
-        text="A randomized anxiety trial with clinically relevant treatment evidence.",
+        text=GAD_BODY,
         retrieved_at=utc_now(),
         publication_types=["Randomized Controlled Trial"],
         topics=["anxiety"],
@@ -419,14 +407,16 @@ def test_pubmed_expression_of_concern_does_not_auto_withdraw(runtime) -> None:
             Section(
                 path="abstract",
                 heading="Abstract",
-                text="A randomized anxiety trial with clinically relevant treatment evidence.",
+                text=GAD_BODY,
                 ordinal=0,
             )
         ],
         metadata={"pmid": "81001"},
     )
     staged = runtime.ingestion.ingest_document(source, original)
-    runtime.ingestion.approve(staged.version_id)
+    if runtime.database.get_version(staged.version_id).status == DocumentStatus.STAGING:
+        runtime.ingestion.approve(staged.version_id)
+    source.connector = "pubmed"
 
     notice = RawDocument(
         source_id=source.id,
@@ -466,19 +456,12 @@ def test_pubmed_retraction_relation_dry_run_does_not_mutate(runtime) -> None:
     from care_anxrag.util import utc_now
 
     source = runtime.ingestion.sources_by_id["test_core"]
-    source.id = "pubmed_test_dry"
-    source.connector = "pubmed"
-    source.layer = KnowledgeLayer.RESEARCH_FRONTIER
-    source.auto_promote = False
-    source.evidence_level = EvidenceLevel.RANDOMIZED_CONTROLLED_TRIAL
-    runtime.ingestion.sources_by_id[source.id] = source
-    runtime.database.upsert_sources([source])
 
     original = RawDocument(
         source_id=source.id,
         external_id="82001",
         title="Anxiety trial",
-        text="A randomized anxiety trial with clinically relevant treatment evidence.",
+        text=GAD_BODY,
         retrieved_at=utc_now(),
         publication_types=["Randomized Controlled Trial"],
         topics=["anxiety"],
@@ -486,14 +469,16 @@ def test_pubmed_retraction_relation_dry_run_does_not_mutate(runtime) -> None:
             Section(
                 path="abstract",
                 heading="Abstract",
-                text="A randomized anxiety trial with clinically relevant treatment evidence.",
+                text=GAD_BODY,
                 ordinal=0,
             )
         ],
         metadata={"pmid": "82001"},
     )
     staged = runtime.ingestion.ingest_document(source, original)
-    runtime.ingestion.approve(staged.version_id)
+    if runtime.database.get_version(staged.version_id).status == DocumentStatus.STAGING:
+        runtime.ingestion.approve(staged.version_id)
+    source.connector = "pubmed"
 
     notice = RawDocument(
         source_id=source.id,
