@@ -171,6 +171,11 @@ class IngestionService:
         for document in fetched.documents:
             try:
                 result = self.ingest_document(source, document, dry_run=dry_run)
+                self.apply_pubmed_relations(
+                    source,
+                    document,
+                    dry_run=dry_run,
+                )
                 if result.outcome in counters:
                     counters[result.outcome] += 1
                 elif result.outcome == "withdrawn":
@@ -205,6 +210,71 @@ class IngestionService:
             self.database.save_source_state(state)
         return counters
 
+    def apply_pubmed_relations(
+        self,
+        source: SourceConfig,
+        raw: RawDocument,
+        dry_run: bool = False,
+    ) -> list[str]:
+        """Apply only PubMed relationships that safely invalidate active evidence.
+
+        RetractionOf is actionable because it identifies an original article that
+        the linked notice retracts. Expressions of concern, errata, updates, and
+        other relation types remain provenance metadata for review and do not
+        automatically withdraw evidence.
+        """
+        if source.connector != "pubmed":
+            return []
+
+        raw_targets = raw.metadata.get(
+            "retraction_of_pmids",
+            [],
+        )
+        if not isinstance(
+            raw_targets,
+            (list, tuple, set),
+        ):
+            return []
+
+        affected: list[str] = []
+        for raw_pmid in raw_targets:
+            target_pmid = str(raw_pmid).strip()
+            if not target_pmid:
+                continue
+
+            document_id = self.database.get_document_id_by_external_id(
+                source.id,
+                target_pmid,
+            )
+            if document_id is None:
+                continue
+
+            active = self.database.get_active_version(
+                document_id
+            )
+            if active is None:
+                continue
+
+            affected.append(target_pmid)
+            if dry_run:
+                continue
+
+            old_active_chunks = (
+                self.database.list_chunks_for_version(
+                    active.version_id
+                )
+            )
+            self.database.withdraw_document(
+                document_id,
+                reason=(
+                    "pubmed_retraction_notice:"
+                    f"{raw.external_id}"
+                ),
+            )
+            self._delete_vectors(old_active_chunks)
+
+        return list(dict.fromkeys(affected))
+
     def ingest_document(
         self,
         source: SourceConfig,
@@ -220,6 +290,7 @@ class IngestionService:
                 "text": cleaned_text,
                 "publication_types": sorted(raw.publication_types),
                 "publication_status": raw.metadata.get("publication_status"),
+                "pubmed_relations": raw.metadata.get("pubmed_relations", []),
                 "license": raw.metadata.get("license_text"),
                 "updated_at": raw.updated_at.isoformat() if raw.updated_at else None,
             }
