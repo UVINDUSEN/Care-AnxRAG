@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -270,7 +271,7 @@ def _is_extractive_answer(answer: Any) -> bool:
         if not line:
             continue
         line = line.removeprefix("-").strip()
-        line = __import__("re").sub(r"\s*\[S\d+\]\s*$", "", line).strip()
+        line = re.sub(r"\s*\[S\d+\]\s*$", "", line).strip()
         if not line:
             continue
         normalized = " ".join(line.split())
