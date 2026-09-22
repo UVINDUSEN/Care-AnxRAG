@@ -91,7 +91,7 @@ class Settings:
     embedding_provider: str = "ollama"
     embedding_model: str = "embeddinggemma"
     embedding_dimensions: int = 256
-    generator_provider: str = "ollama"
+    generator_provider: str = "extractive"
     generation_model: str = "gemma3:4b"
     ollama_base_url: str = "http://localhost:11434"
 
@@ -154,7 +154,7 @@ class Settings:
             embedding_provider=env.get("CARE_EMBEDDING_PROVIDER", "ollama").lower(),
             embedding_model=env.get("CARE_EMBEDDING_MODEL", "embeddinggemma"),
             embedding_dimensions=_as_int(env.get("CARE_EMBEDDING_DIMENSIONS"), 256),
-            generator_provider=env.get("CARE_GENERATOR_PROVIDER", "ollama").lower(),
+            generator_provider=env.get("CARE_GENERATOR_PROVIDER", "extractive").lower(),
             generation_model=env.get("CARE_GENERATION_MODEL", "gemma3:4b"),
             ollama_base_url=env.get("CARE_OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/"),
             reranker_provider=env.get("CARE_RERANKER_PROVIDER", "cross_encoder").lower(),
@@ -226,7 +226,12 @@ class Settings:
             raise ValueError("CARE_VECTOR_BACKEND must be 'chroma' or 'sqlite'")
         if self.embedding_provider not in {"ollama", "sentence_transformers", "hash"}:
             raise ValueError("Unsupported embedding provider")
-        if self.generator_provider not in {"ollama", "rule"}:
+        if self.generator_provider == "ollama":
+            raise ValueError(
+                "CARE_GENERATOR_PROVIDER=ollama is disabled: "
+                "free-form medical answer generation is disabled"
+            )
+        if self.generator_provider not in {"extractive", "rule"}:
             raise ValueError("Unsupported generator provider")
         if self.reranker_provider not in {"cross_encoder", "heuristic"}:
             raise ValueError("Unsupported reranker provider")
