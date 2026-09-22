@@ -106,6 +106,7 @@ class Settings:
     rerank_candidates: int = 20
     final_context_chunks: int = 6
     rrf_k: int = 60
+    retrieval_mode: str = "full"
 
     minimum_care_score: float = 0.43
     minimum_relevance_score: float = 0.24
@@ -169,6 +170,7 @@ class Settings:
             rerank_candidates=_as_int(env.get("CARE_RERANK_CANDIDATES"), 20),
             final_context_chunks=_as_int(env.get("CARE_FINAL_CONTEXT_CHUNKS"), 6),
             rrf_k=_as_int(env.get("CARE_RRF_K"), 60),
+            retrieval_mode=env.get("CARE_RETRIEVAL_MODE", "full").lower(),
             minimum_care_score=_as_float(env.get("CARE_MINIMUM_CARE_SCORE"), 0.43),
             minimum_relevance_score=_as_float(
                 env.get("CARE_MINIMUM_RELEVANCE_SCORE"), 0.24
@@ -266,6 +268,20 @@ class Settings:
             raise ValueError("Evidence half-life values must be positive")
         if self.request_timeout_seconds <= 0:
             raise ValueError("CARE_REQUEST_TIMEOUT_SECONDS must be positive")
+        valid_retrieval_modes = {
+            "dense_only",
+            "lexical_only",
+            "hybrid_rrf",
+            "hybrid_rerank",
+            "care",
+            "care_conflict",
+            "full",
+        }
+        if self.retrieval_mode not in valid_retrieval_modes:
+            raise ValueError(
+                "CARE_RETRIEVAL_MODE must be one of: "
+                + ", ".join(sorted(valid_retrieval_modes))
+            )
         if self.rerank_candidates > self.fused_candidates:
             raise ValueError("CARE_RERANK_CANDIDATES cannot exceed CARE_FUSED_CANDIDATES")
         if self.final_context_chunks > self.rerank_candidates:

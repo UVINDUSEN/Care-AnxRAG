@@ -234,6 +234,38 @@ def evaluate(
     )
 
 
+
+ABLATION_MODES: tuple[tuple[str, str], ...] = (
+    ("B0_dense_only", "dense_only"),
+    ("B1_lexical_only", "lexical_only"),
+    ("B2_hybrid_rrf", "hybrid_rrf"),
+    ("B3_hybrid_rerank", "hybrid_rerank"),
+    ("B4_care", "care"),
+    ("B5_care_conflict", "care_conflict"),
+    ("CARE_full", "full"),
+)
+
+
+def evaluate_ablation(
+    retriever: CareRetriever,
+    rag: CareAnxRag,
+    items: Iterable[BenchmarkItem],
+) -> dict[str, EvaluationReport]:
+    benchmark_items = list(items)
+    original_mode = retriever.settings.retrieval_mode
+    reports: dict[str, EvaluationReport] = {}
+    try:
+        for label, mode in ABLATION_MODES:
+            retriever.settings.retrieval_mode = mode
+            reports[label] = evaluate(
+                retriever,
+                rag,
+                benchmark_items,
+            )
+    finally:
+        retriever.settings.retrieval_mode = original_mode
+    return reports
+
 def _is_relevant(source_id: str, metadata: dict[str, Any], item: BenchmarkItem) -> bool:
     external_id = str(metadata.get("external_id", ""))
     return source_id in item.relevant_source_ids or external_id in item.relevant_external_ids

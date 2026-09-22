@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from care_anxrag.evaluation import BenchmarkItem, evaluate, load_benchmark
+from care_anxrag.evaluation import BenchmarkItem, evaluate, evaluate_ablation, load_benchmark
 from care_anxrag.models import (
     AnswerResponse,
     ChunkRecord,
@@ -290,3 +290,82 @@ def test_evaluation_detects_non_extractive_answer_text() -> None:
 
     assert report.extractive_faithfulness == 0.0
     assert report.per_item[0]["extractive_faithful"] is False
+
+
+
+def test_evaluate_ablation_runs_all_research_modes_and_restores_setting() -> None:
+    from types import SimpleNamespace
+
+    chunk = _chunk()
+    hit = SearchHit(chunk=chunk, care_score=0.9)
+
+    class Retriever:
+        def __init__(self):
+            self.settings = SimpleNamespace(retrieval_mode="full")
+            self.seen_modes = []
+
+        def retrieve(self, question: str) -> RetrievalResult:
+            self.seen_modes.append(self.settings.retrieval_mode)
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[hit],
+                confidence=0.9,
+                should_abstain=False,
+            )
+
+    class Rag:
+        def __init__(self, retriever):
+            self.retriever = retriever
+
+        def answer(self, question: str) -> AnswerResponse:
+            citation = Citation(
+                citation_id="S1",
+                chunk_id=chunk.chunk_id,
+                title=chunk.title,
+                source_name=chunk.source_name,
+                source_id=chunk.source_id,
+                url=chunk.url,
+                evidence_level=chunk.evidence_level,
+                excerpt=chunk.text,
+            )
+            return AnswerResponse(
+                answer=f"- {chunk.text} [S1]",
+                citations=[citation],
+                confidence=0.9,
+                conflict_score=0.0,
+                abstained=False,
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    retriever = Retriever()
+    reports = evaluate_ablation(
+        retriever,
+        Rag(retriever),
+        [
+            BenchmarkItem(
+                id="q1",
+                question="answerable",
+                relevant_external_ids=["gold-doc"],
+            )
+        ],
+    )
+
+    assert list(reports) == [
+        "B0_dense_only",
+        "B1_lexical_only",
+        "B2_hybrid_rrf",
+        "B3_hybrid_rerank",
+        "B4_care",
+        "B5_care_conflict",
+        "CARE_full",
+    ]
+    assert retriever.settings.retrieval_mode == "full"
+    assert set(retriever.seen_modes) == {
+        "dense_only",
+        "lexical_only",
+        "hybrid_rrf",
+        "hybrid_rerank",
+        "care",
+        "care_conflict",
+        "full",
+    }

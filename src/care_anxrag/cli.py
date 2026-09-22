@@ -13,6 +13,7 @@ import uvicorn
 
 from .config import Settings
 from .evaluation import evaluate as run_evaluation
+from .evaluation import evaluate_ablation as run_ablation
 from .evaluation import load_benchmark
 from .logging_utils import configure_logging
 from .runtime import build_runtime
@@ -199,6 +200,27 @@ def evaluate(
     runtime = _runtime(project_root)
     report = run_evaluation(runtime.retriever, runtime.rag, load_benchmark(benchmark))
     typer.echo(_json(report.as_dict()))
+
+
+@app.command("evaluate-ablation")
+def evaluate_ablation_command(
+    benchmark: Annotated[Path, typer.Argument(help="Benchmark JSONL file")],
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    runtime = _runtime(project_root)
+    reports = run_ablation(
+        runtime.retriever,
+        runtime.rag,
+        load_benchmark(benchmark),
+    )
+    typer.echo(
+        _json(
+            {
+                label: report.as_dict()
+                for label, report in reports.items()
+            }
+        )
+    )
 
 
 @app.command()
