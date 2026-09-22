@@ -13,6 +13,7 @@ from .embeddings import (
     SentenceTransformerEmbedder,
 )
 from .generation import Generator, OllamaGenerator, RuleBasedGenerator
+from .grounding import ClaimGroundingVerifier
 from .ingestion import IngestionService
 from .models import HealthStatus, SourceConfig
 from .nli import CrossEncoderNliClassifier, HeuristicNliClassifier, NliClassifier
@@ -109,6 +110,10 @@ def build_runtime(settings: Settings | None = None) -> Runtime:
     reranker = _build_reranker(settings)
     nli = _build_nli(settings)
     generator = _build_generator(settings)
+    grounding = ClaimGroundingVerifier(
+        nli,
+        threshold=settings.grounding_entailment_threshold,
+    )
     ingestion = IngestionService(
         settings,
         database,
@@ -124,7 +129,7 @@ def build_runtime(settings: Settings | None = None) -> Runtime:
         reranker,
         nli,
     )
-    rag = CareAnxRag(settings, retriever, generator)
+    rag = CareAnxRag(settings, retriever, generator, grounding)
     return Runtime(
         settings=settings,
         database=database,
