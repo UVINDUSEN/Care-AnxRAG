@@ -135,3 +135,21 @@ def test_grounding_rejects_unknown_inline_source() -> None:
     )
     assert not report.supported
     assert report.reason == "unknown_citation"
+
+
+
+def test_heuristic_nli_classifies_raw_text_pairs_for_grounding() -> None:
+    from care_anxrag.nli import HeuristicNliClassifier
+
+    result = HeuristicNliClassifier().classify_text_pairs(
+        [
+            (
+                "Cognitive behavioural therapy is effective for panic disorder.",
+                "Cognitive behavioural therapy is effective for panic disorder.",
+            )
+        ]
+    )
+
+    assert len(result) == 1
+    assert result[0][0] == RelationLabel.ENTAILMENT
+    assert result[0][1] >= 0.65
