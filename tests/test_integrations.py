@@ -150,6 +150,9 @@ def test_ollama_generation_contract_and_citations(monkeypatch) -> None:
     assert payload.cited_source_ids == ["S1"]
     assert captured["url"].endswith("/api/chat")
     assert isinstance(captured["json"]["format"], dict)
+    system_text = captured["json"]["messages"][0]["content"]
+    assert "atomic factual sentence" in system_text
+    assert "individually support the entire claim" in system_text
 
 
 def test_ollama_repair_request_retains_original_evidence(monkeypatch) -> None:
