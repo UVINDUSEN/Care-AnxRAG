@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from care_anxrag.evaluation import BenchmarkItem, evaluate
+from care_anxrag.evaluation import BenchmarkItem, evaluate, load_benchmark
 from care_anxrag.models import (
     AnswerResponse,
     ChunkRecord,
@@ -135,3 +135,158 @@ def test_evaluation_excludes_unlabelled_abstention_items_from_retrieval_metrics(
     assert report.precision_at_5 == 1.0
     assert report.per_item[1]["recall_at_5"] is None
     assert report.abstention_accuracy == 1.0
+
+
+
+def test_benchmark_item_supports_research_annotation_metadata() -> None:
+    item = BenchmarkItem(
+        id="gad-cbt-001",
+        question="What evidence addresses CBT for GAD in older adults?",
+        stratum="psychological_interventions",
+        split="development",
+        intent="treatment",
+        anxiety_subtypes=["generalized_anxiety_disorder"],
+        population="older_adults",
+        relevant_external_ids=["gold-doc"],
+        prohibited_external_ids=["wrong-doc"],
+        gold_evidence_excerpts=["Exact approved evidence sentence."],
+        prohibited_claims=["CBT cures every case of GAD."],
+        annotator_ids=["clinician-a", "clinician-b"],
+        adjudicated=True,
+    )
+
+    assert item.stratum == "psychological_interventions"
+    assert item.split == "development"
+    assert item.adjudicated is True
+    assert item.prohibited_external_ids == ["wrong-doc"]
+
+
+def test_load_benchmark_rejects_duplicate_item_ids(tmp_path) -> None:
+    path = tmp_path / "benchmark.jsonl"
+    path.write_text(
+        '{"id":"q1","question":"one"}\n'
+        '{"id":"q1","question":"two"}\n',
+        encoding="utf-8",
+    )
+
+    import pytest
+
+    with pytest.raises(ValueError, match="Duplicate benchmark item id"):
+        load_benchmark(path)
+
+
+def test_evaluation_reports_extractive_faithfulness_and_prohibited_intrusion() -> None:
+    trusted = _chunk()
+    poisoned = trusted.model_copy(
+        update={
+            "chunk_id": "chunk-poison",
+            "document_id": "doc-poison",
+            "version_id": "version-poison",
+            "source_id": "poison-source",
+            "text": "Unapproved distractor evidence.",
+            "metadata": {"external_id": "poison-doc"},
+        }
+    )
+    trusted_hit = SearchHit(chunk=trusted, care_score=0.9)
+    poisoned_hit = SearchHit(chunk=poisoned, care_score=0.8)
+
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[trusted_hit, poisoned_hit],
+                confidence=0.9,
+                should_abstain=False,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            citation = Citation(
+                citation_id="S1",
+                chunk_id=trusted.chunk_id,
+                title=trusted.title,
+                source_name=trusted.source_name,
+                source_id=trusted.source_id,
+                url=trusted.url,
+                evidence_level=trusted.evidence_level,
+                excerpt=trusted.text,
+            )
+            return AnswerResponse(
+                answer=f"- {trusted.text} [S1]",
+                citations=[citation],
+                confidence=0.9,
+                conflict_score=0.0,
+                abstained=False,
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    report = evaluate(
+        Retriever(),
+        Rag(),
+        [
+            BenchmarkItem(
+                id="answerable",
+                question="answerable",
+                stratum="source_poisoning",
+                relevant_external_ids=["gold-doc"],
+                prohibited_external_ids=["poison-doc"],
+            )
+        ],
+    )
+
+    assert report.extractive_evaluable_count == 1
+    assert report.extractive_faithfulness == 1.0
+    assert report.prohibited_evidence_evaluable_count == 1
+    assert report.prohibited_evidence_intrusion_rate == 1.0
+    assert report.per_stratum["source_poisoning"]["count"] == 1
+
+
+def test_evaluation_detects_non_extractive_answer_text() -> None:
+    chunk = _chunk()
+    hit = SearchHit(chunk=chunk, care_score=0.9)
+
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[hit],
+                confidence=0.9,
+                should_abstain=False,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            citation = Citation(
+                citation_id="S1",
+                chunk_id=chunk.chunk_id,
+                title=chunk.title,
+                source_name=chunk.source_name,
+                source_id=chunk.source_id,
+                url=chunk.url,
+                evidence_level=chunk.evidence_level,
+                excerpt=chunk.text,
+            )
+            return AnswerResponse(
+                answer="This is a newly paraphrased medical claim [S1].",
+                citations=[citation],
+                confidence=0.9,
+                conflict_score=0.0,
+                abstained=False,
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    report = evaluate(
+        Retriever(),
+        Rag(),
+        [
+            BenchmarkItem(
+                id="non-extractive",
+                question="answerable",
+                stratum="faithfulness",
+                relevant_external_ids=["gold-doc"],
+            )
+        ],
+    )
+
+    assert report.extractive_faithfulness == 0.0
+    assert report.per_item[0]["extractive_faithful"] is False
