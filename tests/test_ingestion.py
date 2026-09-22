@@ -450,6 +450,13 @@ def test_pubmed_expression_of_concern_does_not_auto_withdraw(runtime) -> None:
     assert active is not None
     assert active.status == DocumentStatus.ACTIVE
 
+    alerts = runtime.database.list_evidence_alerts()
+    assert len(alerts) == 1
+    assert alerts[0]["relation_type"] == "ExpressionOfConcernFor"
+    assert alerts[0]["target_external_id"] == "81001"
+    assert alerts[0]["notice_external_id"] == "91001"
+    assert alerts[0]["resolved_at"] is None
+
 
 def test_pubmed_retraction_relation_dry_run_does_not_mutate(runtime) -> None:
     from care_anxrag.models import EvidenceLevel, RawDocument, Section
@@ -501,3 +508,4 @@ def test_pubmed_retraction_relation_dry_run_does_not_mutate(runtime) -> None:
     active = runtime.database.get_version(staged.version_id)
     assert active is not None
     assert active.status == DocumentStatus.ACTIVE
+    assert runtime.database.list_evidence_alerts() == []
