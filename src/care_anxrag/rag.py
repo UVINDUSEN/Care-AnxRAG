@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .config import Settings
 from .generation import Generator
+from .grounding import ClaimGroundingVerifier
 from .models import (
     AnswerResponse,
     Citation,
@@ -20,10 +21,12 @@ class CareAnxRag:
         settings: Settings,
         retriever: CareRetriever,
         generator: Generator,
+        grounding: ClaimGroundingVerifier,
     ):
         self.settings = settings
         self.retriever = retriever
         self.generator = generator
+        self.grounding = grounding
 
     def answer(self, question: str, include_debug: bool = False) -> AnswerResponse:
         retrieval = self.retriever.retrieve(question)
@@ -63,6 +66,7 @@ class CareAnxRag:
 
         try:
             generated = self.generator.generate(question, context_hits, retrieval)
+            grounding = self.grounding.verify(generated, context_hits)
         except Exception as exc:
             return AnswerResponse(
                 answer=(
@@ -79,6 +83,25 @@ class CareAnxRag:
                 retrieval=retrieval if include_debug else None,
             )
 
+        if not grounding.supported:
+            return AnswerResponse(
+                answer=(
+                    "The evidence retrieval and generation completed, but the generated claims "
+                    "could not be verified against their cited evidence. "
+                    "No ungrounded medical answer was returned."
+                ),
+                confidence=retrieval.confidence,
+                conflict_score=retrieval.conflict_score,
+                abstained=True,
+                abstention_reason=(
+                    f"claim_citation_grounding_failed:{grounding.reason}"
+                ),
+                safety_level=SafetyLevel.NORMAL,
+                latest_evidence_at=retrieval.latest_evidence_at,
+                knowledge_base_last_sync_at=retrieval.knowledge_base_last_sync_at,
+                retrieval=retrieval if include_debug else None,
+            )
+
         hit_by_source_id = {f"S{index}": hit for index, hit in enumerate(context_hits, start=1)}
         citations = [
             self._citation(source_id, hit_by_source_id[source_id])
@@ -86,8 +109,6 @@ class CareAnxRag:
             if source_id in hit_by_source_id
         ]
         answer = normalize_whitespace(generated.answer)
-        if generated.uncertainty:
-            answer = f"{answer}\n\nUncertainty: {normalize_whitespace(generated.uncertainty)}"
         if retrieval.query_analysis.intent in {QueryIntent.DIAGNOSIS, QueryIntent.MEDICATION}:
             answer += (
                 "\n\nThis is general evidence-based information, not a diagnosis or an individualized "
