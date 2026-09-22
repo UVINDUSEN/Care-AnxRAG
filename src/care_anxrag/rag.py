@@ -109,8 +109,6 @@ class CareAnxRag:
             if source_id in hit_by_source_id
         ]
         answer = normalize_whitespace(generated.answer)
-        if generated.uncertainty:
-            answer = f"{answer}\n\nUncertainty: {normalize_whitespace(generated.uncertainty)}"
         if retrieval.query_analysis.intent in {QueryIntent.DIAGNOSIS, QueryIntent.MEDICATION}:
             answer += (
                 "\n\nThis is general evidence-based information, not a diagnosis or an individualized "
