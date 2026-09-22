@@ -22,8 +22,8 @@ class Generator(Protocol):
     def ping(self) -> bool: ...
 
 
-class RuleBasedGenerator:
-    """Deterministic generator for tests and end-to-end offline validation."""
+class EvidenceOnlyGenerator:
+    """Extractive answer renderer: returns source sentences verbatim with citations."""
 
     def generate(
         self,
@@ -44,24 +44,21 @@ class RuleBasedGenerator:
         for index, hit in enumerate(hits[:3], start=1):
             source_id = f"S{index}"
             excerpt = _best_sentence(hit.chunk.text, question)
-            sentences.append(f"{excerpt} [{source_id}]")
+            sentences.append(f"- {excerpt} [{source_id}]")
             cited.append(source_id)
 
-        uncertainty = None
-        if retrieval.conflict_score > 0.0:
-            uncertainty = (
-                f"The retrieved evidence had a conflict score of "
-                f"{retrieval.conflict_score:.2f}; interpret the synthesis cautiously."
-            )
-
         return GeneratedPayload(
-            answer=" ".join(sentences),
+            answer="\n".join(sentences),
             cited_source_ids=cited,
-            uncertainty=uncertainty,
+            uncertainty=None,
         )
 
     def ping(self) -> bool:
         return True
+
+
+# Backward-compatible name for existing deterministic tests and offline scripts.
+RuleBasedGenerator = EvidenceOnlyGenerator
 
 
 class OllamaGenerator:
