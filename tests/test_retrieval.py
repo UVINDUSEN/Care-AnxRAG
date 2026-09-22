@@ -516,3 +516,104 @@ def test_abstention_requires_support_for_each_requested_treatment(runtime) -> No
 
     assert not should_abstain
     assert reason is None
+
+
+
+def test_dense_only_mode_disables_lexical_rerank_care_and_nli(runtime, monkeypatch) -> None:
+    runtime.settings.retrieval_mode = "dense_only"
+    calls = {"lexical": 0, "rerank": 0, "nli": 0, "care": 0}
+
+    monkeypatch.setattr(
+        runtime.retriever,
+        "_lexical_search",
+        lambda query: calls.__setitem__("lexical", calls["lexical"] + 1) or [],
+    )
+    monkeypatch.setattr(
+        runtime.retriever.reranker,
+        "score",
+        lambda query, hits: calls.__setitem__("rerank", calls["rerank"] + 1) or [],
+    )
+    monkeypatch.setattr(
+        runtime.retriever.nli,
+        "classify",
+        lambda pairs: calls.__setitem__("nli", calls["nli"] + 1) or [],
+    )
+    monkeypatch.setattr(
+        runtime.retriever,
+        "_care_score",
+        lambda hit, analysis=None: calls.__setitem__("care", calls["care"] + 1) or 0.0,
+    )
+    monkeypatch.setattr(runtime.retriever.embedder, "embed", lambda texts: [[0.0]])
+    monkeypatch.setattr(runtime.retriever, "_dense_search", lambda embedding, layers: [])
+
+    runtime.retriever.retrieve("panic disorder treatment")
+
+    assert calls == {"lexical": 0, "rerank": 0, "nli": 0, "care": 0}
+
+
+def test_lexical_only_mode_does_not_embed_query(runtime, monkeypatch) -> None:
+    runtime.settings.retrieval_mode = "lexical_only"
+    calls = {"embed": 0, "dense": 0}
+
+    monkeypatch.setattr(
+        runtime.retriever.embedder,
+        "embed",
+        lambda texts: calls.__setitem__("embed", calls["embed"] + 1) or [[0.0]],
+    )
+    monkeypatch.setattr(
+        runtime.retriever,
+        "_dense_search",
+        lambda embedding, layers: calls.__setitem__("dense", calls["dense"] + 1) or [],
+    )
+    monkeypatch.setattr(runtime.retriever, "_lexical_search", lambda query: [])
+
+    runtime.retriever.retrieve("panic disorder treatment")
+
+    assert calls == {"embed": 0, "dense": 0}
+
+
+def test_hybrid_rrf_mode_disables_reranker_care_and_nli(runtime, monkeypatch) -> None:
+    runtime.settings.retrieval_mode = "hybrid_rrf"
+    calls = {"rerank": 0, "nli": 0, "care": 0}
+
+    monkeypatch.setattr(runtime.retriever.embedder, "embed", lambda texts: [[0.0]])
+    monkeypatch.setattr(runtime.retriever, "_dense_search", lambda embedding, layers: [])
+    monkeypatch.setattr(runtime.retriever, "_lexical_search", lambda query: [])
+    monkeypatch.setattr(
+        runtime.retriever.reranker,
+        "score",
+        lambda query, hits: calls.__setitem__("rerank", calls["rerank"] + 1) or [],
+    )
+    monkeypatch.setattr(
+        runtime.retriever.nli,
+        "classify",
+        lambda pairs: calls.__setitem__("nli", calls["nli"] + 1) or [],
+    )
+    monkeypatch.setattr(
+        runtime.retriever,
+        "_care_score",
+        lambda hit, analysis=None: calls.__setitem__("care", calls["care"] + 1) or 0.0,
+    )
+
+    runtime.retriever.retrieve("panic disorder treatment")
+
+    assert calls == {"rerank": 0, "nli": 0, "care": 0}
+
+
+def test_settings_reject_unknown_retrieval_mode(project) -> None:
+    from care_anxrag.config import Settings
+
+    import pytest
+
+    with pytest.raises(ValueError, match="CARE_RETRIEVAL_MODE"):
+        Settings.from_env(
+            project_root=project,
+            environ={
+                "CARE_RETRIEVAL_MODE": "magic",
+                "CARE_VECTOR_BACKEND": "sqlite",
+                "CARE_EMBEDDING_PROVIDER": "hash",
+                "CARE_GENERATOR_PROVIDER": "extractive",
+                "CARE_RERANKER_PROVIDER": "heuristic",
+                "CARE_NLI_PROVIDER": "heuristic",
+            },
+        )
