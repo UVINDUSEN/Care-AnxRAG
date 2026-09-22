@@ -6,15 +6,17 @@ Does contradiction-, authority-, reliability-, evidence-, and freshness-aware re
 
 ## Baselines
 
-- B0: generator without retrieval.
-- B1: dense vector top-k.
+CARE-AnxRAG does not use free-form medical answer generation. Baselines therefore compare retrieval/evidence-selection stages while keeping the same frozen corpus, chunking, question set, and extractive answer renderer.
+
+- B0: dense vector top-k only.
+- B1: lexical BM25 top-k only.
 - B2: dense + BM25 + RRF.
 - B3: B2 + CrossEncoder reranker.
 - B4: B3 + authority/evidence/freshness/applicability CARE score.
 - B5: B4 + contradiction handling.
-- CARE-AnxRAG: B5 + independent relevance gate + calibrated abstention + version-aware corpus.
+- CARE-AnxRAG: B5 + independent relevance gate + treatment/population sufficiency + calibrated abstention + version-aware corpus + extractive citation grounding.
 
-Keep generator, corpus snapshot, prompt, chunking, and evaluation questions constant across baselines.
+Keep corpus snapshot, chunking, extractive rendering, and evaluation questions constant across baselines.
 
 ## Benchmark strata
 
@@ -62,7 +64,7 @@ Use at least two qualified annotators for clinical/evidence labels, report agree
 - active-version accuracy
 - poisoned-evidence intrusion rate
 
-## Generation metrics
+## Answer/evidence-presentation metrics
 
 - expert answer correctness;
 - faithfulness/unsupported claim rate;
