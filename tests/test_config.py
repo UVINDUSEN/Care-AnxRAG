@@ -105,3 +105,20 @@ def test_embeddinggemma_rejects_unsupported_dimension(project: Path) -> None:
                 "CARE_EMBEDDING_DIMENSIONS": "384",
             },
         )
+
+
+
+def test_grounding_entailment_threshold_from_environment(project: Path) -> None:
+    settings = Settings.from_env(
+        project_root=project,
+        environ={
+            "CARE_VECTOR_BACKEND": "sqlite",
+            "CARE_EMBEDDING_PROVIDER": "hash",
+            "CARE_GENERATOR_PROVIDER": "rule",
+            "CARE_RERANKER_PROVIDER": "heuristic",
+            "CARE_NLI_PROVIDER": "heuristic",
+            "CARE_GROUNDING_ENTAILMENT_THRESHOLD": "0.71",
+        },
+    )
+
+    assert settings.grounding_entailment_threshold == 0.71
