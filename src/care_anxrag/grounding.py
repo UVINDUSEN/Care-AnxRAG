@@ -98,9 +98,23 @@ class ClaimGroundingVerifier:
         payload: GeneratedPayload,
         hits: Sequence[SearchHit],
     ) -> GroundingReport:
+        extracted_claims = extract_claims(payload.answer)
+        inline_citations = {
+            citation_id
+            for claim in extracted_claims
+            for citation_id in claim.citation_ids
+        }
+        if inline_citations != set(payload.cited_source_ids):
+            return GroundingReport(
+                supported=False,
+                reason="citation_list_mismatch",
+                claim_count=len(extracted_claims),
+                checked_pairs=0,
+            )
+
         claims = [
             claim
-            for claim in extract_claims(payload.answer)
+            for claim in extracted_claims
             if _is_substantive(claim)
         ]
         if not claims:
