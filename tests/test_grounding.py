@@ -153,3 +153,22 @@ def test_heuristic_nli_classifies_raw_text_pairs_for_grounding() -> None:
     assert len(result) == 1
     assert result[0][0] == RelationLabel.ENTAILMENT
     assert result[0][1] >= 0.65
+
+
+
+def test_grounding_rejects_structured_citation_list_mismatch() -> None:
+    nli = StubNli([(RelationLabel.ENTAILMENT, 0.95)])
+    payload = GeneratedPayload(
+        answer="CBT is effective for panic disorder [S1].",
+        cited_source_ids=["S1", "S2"],
+    )
+    report = ClaimGroundingVerifier(nli, threshold=0.65).verify(
+        payload,
+        [
+            _hit("1", "CBT is effective for panic disorder."),
+            _hit("2", "A separate anxiety genetics study."),
+        ],
+    )
+
+    assert not report.supported
+    assert report.reason == "citation_list_mismatch"
