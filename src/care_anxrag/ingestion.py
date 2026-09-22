@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Sequence
 
 from .chunking import SectionAwareChunker
+from .clinical_match import build_clinical_evidence_facets
 from .config import Settings
 from .db import Database
 from .embeddings import CachedEmbedder
@@ -334,6 +335,11 @@ class IngestionService:
     ) -> DocumentIngestResult:
         cleaned_text = normalize_whitespace(raw.text)
         cleaned_title = normalize_whitespace(raw.title)
+        clinical_facets = build_clinical_evidence_facets(
+            cleaned_text,
+            raw.topics,
+            raw.metadata.get("pico"),
+        )
         document_id = stable_id(source.id, raw.external_id)
         version_fingerprint = canonical_json(
             {
@@ -342,6 +348,7 @@ class IngestionService:
                 "publication_types": sorted(raw.publication_types),
                 "publication_status": raw.metadata.get("publication_status"),
                 "pubmed_relations": raw.metadata.get("pubmed_relations", []),
+                "clinical_facets": clinical_facets,
                 "license": raw.metadata.get("license_text"),
                 "updated_at": raw.updated_at.isoformat() if raw.updated_at else None,
             }
@@ -392,6 +399,7 @@ class IngestionService:
             rejection_reason=",".join(rejection_reasons) or None,
             metadata={
                 **raw.metadata,
+                "clinical_facets": clinical_facets,
                 "authors": raw.authors,
                 "language": raw.language,
                 "validation_relevance_score": validation.relevance_score,
