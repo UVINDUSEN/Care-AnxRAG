@@ -12,7 +12,7 @@ from .embeddings import (
     OllamaEmbedder,
     SentenceTransformerEmbedder,
 )
-from .generation import Generator, OllamaGenerator, RuleBasedGenerator
+from .generation import EvidenceOnlyGenerator, Generator
 from .grounding import ClaimGroundingVerifier
 from .ingestion import IngestionService
 from .models import HealthStatus, SourceConfig
@@ -183,10 +183,8 @@ def _build_nli(settings: Settings) -> NliClassifier:
 
 
 def _build_generator(settings: Settings) -> Generator:
-    if settings.generator_provider == "rule":
-        return RuleBasedGenerator()
-    return OllamaGenerator(
-        settings.ollama_base_url,
-        settings.generation_model,
-        max(120.0, settings.request_timeout_seconds),
+    if settings.generator_provider in {"extractive", "rule"}:
+        return EvidenceOnlyGenerator()
+    raise ValueError(
+        f"Unsupported generator provider: {settings.generator_provider}"
     )
