@@ -223,6 +223,7 @@ class RetrievalResult(StrictModel):
     abstention_reason: str | None = None
     latest_evidence_at: datetime | None = None
     knowledge_base_last_sync_at: datetime | None = None
+    timings_ms: dict[str, float] = Field(default_factory=dict)
 
 
 class Citation(StrictModel):
@@ -255,6 +256,7 @@ class AnswerResponse(StrictModel):
     safety_message: str | None = None
     latest_evidence_at: datetime | None = None
     knowledge_base_last_sync_at: datetime | None = None
+    timings_ms: dict[str, float] = Field(default_factory=dict)
     retrieval: RetrievalResult | None = None
 
 
