@@ -417,6 +417,22 @@ class Database:
             if status == "success":
                 self.set_metadata("last_successful_sync_at", finished_at.isoformat(), connection)
 
+    def get_document_id_by_external_id(
+        self,
+        source_id: str,
+        external_id: str,
+    ) -> str | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT document_id
+                FROM documents
+                WHERE source_id=? AND external_id=?
+                """,
+                (source_id, external_id),
+            ).fetchone()
+        return None if row is None else str(row["document_id"])
+
     def get_active_version(self, document_id: str) -> DocumentVersion | None:
         with self.connect() as connection:
             row = connection.execute(
