@@ -135,3 +135,32 @@ def test_rag_returns_citations_after_grounding_passes(settings) -> None:
 
     assert not result.abstained
     assert [citation.citation_id for citation in result.citations] == ["S1"]
+
+
+
+class GeneratorWithUngroundedUncertainty:
+    def generate(self, question, hits, retrieval):
+        return GeneratedPayload(
+            answer="CBT can reduce symptoms of panic disorder [S1].",
+            cited_source_ids=["S1"],
+            uncertainty="A genetics study proves this treatment works permanently.",
+        )
+
+    def ping(self) -> bool:
+        return True
+
+
+def test_rag_does_not_return_unverified_generator_uncertainty(settings) -> None:
+    hit = _hit()
+    rag = CareAnxRag(
+        settings,
+        FakeRetriever(_retrieval(hit)),
+        GeneratorWithUngroundedUncertainty(),
+        AcceptGrounding(),
+    )
+
+    result = rag.answer("Does CBT help panic disorder?")
+
+    assert not result.abstained
+    assert "genetics study" not in result.answer
+    assert "works permanently" not in result.answer
