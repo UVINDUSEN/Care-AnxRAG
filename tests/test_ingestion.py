@@ -522,7 +522,8 @@ def test_ingestion_propagates_clinical_facets_to_chunks(runtime) -> None:
         external_id="pico-gad-cbt",
         title="CBT for generalized anxiety disorder",
         text=(
-            "Older adults with generalized anxiety disorder received "
+            GAD_BODY
+            + "\nOlder adults with generalized anxiety disorder received "
             "cognitive behavioural therapy."
         ),
         retrieved_at=utc_now(),
