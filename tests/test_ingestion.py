@@ -216,7 +216,7 @@ def test_research_frontier_requires_global_auto_promote_gate(runtime, project: P
     assert summary.staged == 1
     assert summary.promoted == 0
     assert runtime.database.count_chunks(DocumentStatus.ACTIVE) == 0
-    assert runtime.vector_store.list_ids(runtime.settings.research_collection)
+    assert runtime.vector_store.list_ids(runtime.settings.clinical_collection)
 
 
 def test_local_connector_accepts_scalar_metadata_and_pattern(runtime, project: Path) -> None:
@@ -347,7 +347,7 @@ def test_pubmed_retraction_relation_withdraws_active_target(runtime) -> None:
     assert active is not None
     assert active.status == DocumentStatus.ACTIVE
     assert runtime.vector_store.list_ids(
-        runtime.settings.research_collection
+        runtime.settings.clinical_collection
     )
 
     notice = RawDocument(
@@ -385,7 +385,7 @@ def test_pubmed_retraction_relation_withdraws_active_target(runtime) -> None:
     assert withdrawn.status == DocumentStatus.WITHDRAWN
     assert withdrawn.rejection_reason == "pubmed_retraction_notice:90001"
     assert runtime.vector_store.list_ids(
-        runtime.settings.research_collection
+        runtime.settings.clinical_collection
     ) == set()
 
 
