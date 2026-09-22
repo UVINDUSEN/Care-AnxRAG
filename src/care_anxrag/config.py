@@ -113,6 +113,7 @@ class Settings:
     contradiction_threshold: float = 0.72
     unresolved_conflict_threshold: float = 0.32
     dominance_margin: float = 0.15
+    grounding_entailment_threshold: float = 0.65
     min_distinct_sources: int = 1
 
     clinical_half_life_days: int = 3650
@@ -180,6 +181,10 @@ class Settings:
                 env.get("CARE_UNRESOLVED_CONFLICT_THRESHOLD"), 0.32
             ),
             dominance_margin=_as_float(env.get("CARE_DOMINANCE_MARGIN"), 0.15),
+            grounding_entailment_threshold=_as_float(
+                env.get("CARE_GROUNDING_ENTAILMENT_THRESHOLD"),
+                0.65,
+            ),
             min_distinct_sources=_as_int(env.get("CARE_MIN_DISTINCT_SOURCES"), 1),
             clinical_half_life_days=_as_int(
                 env.get("CARE_CLINICAL_HALF_LIFE_DAYS"), 3650
@@ -267,6 +272,7 @@ class Settings:
             self.contradiction_threshold,
             self.unresolved_conflict_threshold,
             self.dominance_margin,
+            self.grounding_entailment_threshold,
         ]:
             if not 0.0 <= value <= 1.0:
                 raise ValueError("Thresholds must be between 0 and 1")
