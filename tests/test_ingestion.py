@@ -216,7 +216,7 @@ def test_research_frontier_requires_global_auto_promote_gate(runtime, project: P
     assert summary.staged == 1
     assert summary.promoted == 0
     assert runtime.database.count_chunks(DocumentStatus.ACTIVE) == 0
-    assert runtime.vector_store.list_ids(runtime.settings.clinical_collection)
+    assert runtime.vector_store.list_ids(runtime.settings.research_collection)
 
 
 def test_local_connector_accepts_scalar_metadata_and_pattern(runtime, project: Path) -> None:
