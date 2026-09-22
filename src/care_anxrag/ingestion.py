@@ -273,6 +273,57 @@ class IngestionService:
             )
             self._delete_vectors(old_active_chunks)
 
+        review_relation_types = {
+            "ExpressionOfConcernFor",
+            "ErratumFor",
+            "UpdateOf",
+            "CorrectedandRepublishedFrom",
+            "RetractedandRepublishedFrom",
+        }
+        raw_relations = raw.metadata.get(
+            "pubmed_relations",
+            [],
+        )
+        if isinstance(raw_relations, list):
+            for relation in raw_relations:
+                if not isinstance(relation, dict):
+                    continue
+                relation_type = str(
+                    relation.get("ref_type", "")
+                ).strip()
+                target_external_id = str(
+                    relation.get("pmid", "")
+                ).strip()
+                if (
+                    relation_type not in review_relation_types
+                    or not target_external_id
+                ):
+                    continue
+                target_document_id = (
+                    self.database.get_document_id_by_external_id(
+                        source.id,
+                        target_external_id,
+                    )
+                )
+                if (
+                    target_document_id is None
+                    or dry_run
+                ):
+                    continue
+                self.database.record_evidence_alert(
+                    source_id=source.id,
+                    target_document_id=target_document_id,
+                    target_external_id=target_external_id,
+                    notice_external_id=raw.external_id,
+                    relation_type=relation_type,
+                    ref_source=str(
+                        relation.get("ref_source", "")
+                    ),
+                    note=str(
+                        relation.get("note", "")
+                    ),
+                )
+
         return list(dict.fromkeys(affected))
 
     def ingest_document(
