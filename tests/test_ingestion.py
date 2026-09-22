@@ -305,3 +305,207 @@ def test_manual_withdrawal_removes_active_evidence_and_vectors(runtime, project:
     assert runtime.vector_store.list_ids(runtime.settings.clinical_collection) == set()
     result = runtime.rag.answer("What care is discussed for generalized anxiety disorder?")
     assert result.abstained is True
+
+
+
+def test_pubmed_retraction_relation_withdraws_active_target(runtime) -> None:
+    from care_anxrag.models import EvidenceLevel, RawDocument, Section
+    from care_anxrag.util import utc_now
+
+    source = runtime.ingestion.sources_by_id["test_core"]
+
+    original = RawDocument(
+        source_id=source.id,
+        external_id="80001",
+        title="Anxiety trial",
+        text=GAD_BODY,
+        retrieved_at=utc_now(),
+        publication_types=["Randomized Controlled Trial"],
+        topics=["anxiety", "generalized_anxiety_disorder"],
+        sections=[
+            Section(
+                path="abstract",
+                heading="Abstract",
+                text=GAD_BODY,
+                ordinal=0,
+            )
+        ],
+        metadata={
+            "pmid": "80001",
+            "publication_status": "ppublish",
+        },
+    )
+    staged = runtime.ingestion.ingest_document(
+        source,
+        original,
+    )
+    if runtime.database.get_version(staged.version_id).status == DocumentStatus.STAGING:
+        runtime.ingestion.approve(staged.version_id)
+    source.connector = "pubmed"
+
+    active = runtime.database.get_version(staged.version_id)
+    assert active is not None
+    assert active.status == DocumentStatus.ACTIVE
+    assert runtime.vector_store.list_ids(
+        runtime.settings.clinical_collection
+    )
+
+    notice = RawDocument(
+        source_id=source.id,
+        external_id="90001",
+        title="Retraction notice",
+        text="Retraction notice for the linked anxiety trial.",
+        retrieved_at=utc_now(),
+        publication_types=["Retraction Notice"],
+        topics=["anxiety"],
+        metadata={
+            "pmid": "90001",
+            "publication_status": "ppublish",
+            "pubmed_relations": [
+                {
+                    "ref_type": "RetractionOf",
+                    "pmid": "80001",
+                    "ref_source": "Test Journal. 2025;1:1-5.",
+                    "note": "",
+                }
+            ],
+            "retraction_of_pmids": ["80001"],
+        },
+    )
+
+    affected = runtime.ingestion.apply_pubmed_relations(
+        source,
+        notice,
+        dry_run=False,
+    )
+
+    assert affected == ["80001"]
+    withdrawn = runtime.database.get_version(staged.version_id)
+    assert withdrawn is not None
+    assert withdrawn.status == DocumentStatus.WITHDRAWN
+    assert withdrawn.rejection_reason == "pubmed_retraction_notice:90001"
+    assert runtime.vector_store.list_ids(
+        runtime.settings.clinical_collection
+    ) == set()
+
+
+def test_pubmed_expression_of_concern_does_not_auto_withdraw(runtime) -> None:
+    from care_anxrag.models import EvidenceLevel, RawDocument, Section
+    from care_anxrag.util import utc_now
+
+    source = runtime.ingestion.sources_by_id["test_core"]
+
+    original = RawDocument(
+        source_id=source.id,
+        external_id="81001",
+        title="Anxiety trial under review",
+        text=GAD_BODY,
+        retrieved_at=utc_now(),
+        publication_types=["Randomized Controlled Trial"],
+        topics=["anxiety"],
+        sections=[
+            Section(
+                path="abstract",
+                heading="Abstract",
+                text=GAD_BODY,
+                ordinal=0,
+            )
+        ],
+        metadata={"pmid": "81001"},
+    )
+    staged = runtime.ingestion.ingest_document(source, original)
+    if runtime.database.get_version(staged.version_id).status == DocumentStatus.STAGING:
+        runtime.ingestion.approve(staged.version_id)
+    source.connector = "pubmed"
+
+    notice = RawDocument(
+        source_id=source.id,
+        external_id="91001",
+        title="Expression of concern",
+        text="Expression of concern for the linked anxiety trial.",
+        retrieved_at=utc_now(),
+        publication_types=["Expression of Concern"],
+        topics=["anxiety"],
+        metadata={
+            "expression_of_concern_for_pmids": ["81001"],
+            "pubmed_relations": [
+                {
+                    "ref_type": "ExpressionOfConcernFor",
+                    "pmid": "81001",
+                    "ref_source": "Test Journal.",
+                    "note": "",
+                }
+            ],
+        },
+    )
+
+    affected = runtime.ingestion.apply_pubmed_relations(
+        source,
+        notice,
+        dry_run=False,
+    )
+
+    assert affected == []
+    active = runtime.database.get_version(staged.version_id)
+    assert active is not None
+    assert active.status == DocumentStatus.ACTIVE
+
+    alerts = runtime.database.list_evidence_alerts()
+    assert len(alerts) == 1
+    assert alerts[0]["relation_type"] == "ExpressionOfConcernFor"
+    assert alerts[0]["target_external_id"] == "81001"
+    assert alerts[0]["notice_external_id"] == "91001"
+    assert alerts[0]["resolved_at"] is None
+
+
+def test_pubmed_retraction_relation_dry_run_does_not_mutate(runtime) -> None:
+    from care_anxrag.models import EvidenceLevel, RawDocument, Section
+    from care_anxrag.util import utc_now
+
+    source = runtime.ingestion.sources_by_id["test_core"]
+
+    original = RawDocument(
+        source_id=source.id,
+        external_id="82001",
+        title="Anxiety trial",
+        text=GAD_BODY,
+        retrieved_at=utc_now(),
+        publication_types=["Randomized Controlled Trial"],
+        topics=["anxiety"],
+        sections=[
+            Section(
+                path="abstract",
+                heading="Abstract",
+                text=GAD_BODY,
+                ordinal=0,
+            )
+        ],
+        metadata={"pmid": "82001"},
+    )
+    staged = runtime.ingestion.ingest_document(source, original)
+    if runtime.database.get_version(staged.version_id).status == DocumentStatus.STAGING:
+        runtime.ingestion.approve(staged.version_id)
+    source.connector = "pubmed"
+
+    notice = RawDocument(
+        source_id=source.id,
+        external_id="92001",
+        title="Retraction notice",
+        text="Retraction notice for the linked anxiety trial.",
+        retrieved_at=utc_now(),
+        publication_types=["Retraction Notice"],
+        topics=["anxiety"],
+        metadata={"retraction_of_pmids": ["82001"]},
+    )
+
+    affected = runtime.ingestion.apply_pubmed_relations(
+        source,
+        notice,
+        dry_run=True,
+    )
+
+    assert affected == ["82001"]
+    active = runtime.database.get_version(staged.version_id)
+    assert active is not None
+    assert active.status == DocumentStatus.ACTIVE
+    assert runtime.database.list_evidence_alerts() == []
