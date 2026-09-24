@@ -38,6 +38,35 @@ class _RankedId:
     score: float
 
 
+@dataclass(frozen=True, slots=True)
+class RetrievalStages:
+    dense: bool
+    lexical: bool
+    rerank: bool
+    care: bool
+    conflict: bool
+    relevance_gate: bool
+    abstention: bool
+
+
+_RETRIEVAL_STAGE_PROFILES = {
+    "b0_dense": RetrievalStages(True, False, False, False, False, False, False),
+    "b1_lexical": RetrievalStages(False, True, False, False, False, False, False),
+    "b2_hybrid_rrf": RetrievalStages(True, True, False, False, False, False, False),
+    "b3_hybrid_rerank": RetrievalStages(True, True, True, False, False, False, False),
+    "b4_care": RetrievalStages(True, True, True, True, False, False, False),
+    "b5_conflict": RetrievalStages(True, True, True, True, True, False, False),
+    "care_full": RetrievalStages(True, True, True, True, True, True, True),
+}
+
+
+def retrieval_stages_for_profile(profile: str) -> RetrievalStages:
+    try:
+        return _RETRIEVAL_STAGE_PROFILES[profile]
+    except KeyError as exc:
+        raise ValueError(f"Unknown retrieval profile: {profile}") from exc
+
+
 class CareRetriever:
     def __init__(
         self,
@@ -72,11 +101,22 @@ class CareRetriever:
                 knowledge_base_last_sync_at=self.database.last_successful_sync_at(),
             )
 
-        if self.database.count_chunks(status=None) > 0:
-            self.database.assert_embedding_identity(self.embedder.model_id)
-        query_embedding = self.embedder.embed([analysis.retrieval_query])[0]
-        dense_ranked = self._dense_search(query_embedding, analysis.preferred_layers)
-        lexical_ranked = self._lexical_search(analysis.retrieval_query)
+        stages = retrieval_stages_for_profile(self.settings.retrieval_profile)
+
+        dense_ranked: list[_RankedId] = []
+        if stages.dense:
+            if self.database.count_chunks(status=None) > 0:
+                self.database.assert_embedding_identity(self.embedder.model_id)
+            query_embedding = self.embedder.embed([analysis.retrieval_query])[0]
+            dense_ranked = self._dense_search(
+                query_embedding,
+                analysis.preferred_layers,
+            )
+
+        lexical_ranked: list[_RankedId] = []
+        if stages.lexical:
+            lexical_ranked = self._lexical_search(analysis.retrieval_query)
+
         hits = self._fuse(dense_ranked, lexical_ranked)
         if not hits:
             return RetrievalResult(
@@ -88,10 +128,14 @@ class CareRetriever:
                 knowledge_base_last_sync_at=self.database.last_successful_sync_at(),
             )
 
-        rerank_subset = hits[: self.settings.rerank_candidates]
-        rerank_scores = self.reranker.score(analysis.original_query, rerank_subset)
-        for hit, score in zip(rerank_subset, rerank_scores, strict=True):
-            hit.rerank_score = clamp(score)
+        if stages.rerank:
+            rerank_subset = hits[: self.settings.rerank_candidates]
+            rerank_scores = self.reranker.score(
+                analysis.original_query,
+                rerank_subset,
+            )
+            for hit, score in zip(rerank_subset, rerank_scores, strict=True):
+                hit.rerank_score = clamp(score)
 
         max_rrf = max((hit.rrf_score for hit in hits), default=1.0)
         for hit in hits:
@@ -109,32 +153,54 @@ class CareRetriever:
                 hit.chunk.layer,
             )
             hit.relevance_score = self._relevance_score(hit)
-            hit.care_score = self._care_score(
-            hit,
-            analysis,
-        )
-        hits.sort(key=lambda value: value.care_score, reverse=True)
+            if stages.care:
+                hit.care_score = self._care_score(
+                    hit,
+                    analysis,
+                )
 
-        # Source authority and evidence quality must never make an unrelated chunk
-        # answerable. Conflict analysis and final context operate only on candidates
-        # that pass an independent query-evidence relevance gate.
-        relevant_hits = [
-            hit for hit in hits
-            if hit.relevance_score >= self.settings.minimum_relevance_score
-        ]
-        relation_candidates = self._diversify(
-            relevant_hits, limit=min(6, len(relevant_hits)), max_per_document=1
-        )
-        pairs = [
-            (left, right)
-            for left, right in itertools.combinations(relation_candidates, 2)
-            if left.chunk.document_id != right.chunk.document_id
-        ]
-        relations = self.nli.classify(pairs)
-        conflict_score, unresolved_conflict = self._resolve_conflicts(hits, relations)
+        if stages.care:
+            hits.sort(key=lambda value: value.care_score, reverse=True)
+        elif stages.rerank:
+            hits.sort(key=lambda value: value.rerank_score, reverse=True)
+
+        # Only the full CARE profile applies the independent relevance gate.
+        # Earlier profiles intentionally omit it so ablations isolate the stage
+        # named by the research protocol.
+        candidate_hits = hits
+        if stages.relevance_gate:
+            candidate_hits = [
+                hit
+                for hit in hits
+                if hit.relevance_score >= self.settings.minimum_relevance_score
+            ]
+
+        relations: list[EvidenceRelation] = []
+        conflict_score = 0.0
+        unresolved_conflict = 0.0
+        if stages.conflict:
+            relation_candidates = self._diversify(
+                candidate_hits,
+                limit=min(6, len(candidate_hits)),
+                max_per_document=1,
+            )
+            pairs = [
+                (left, right)
+                for left, right in itertools.combinations(relation_candidates, 2)
+                if left.chunk.document_id != right.chunk.document_id
+            ]
+            relations = self.nli.classify(pairs)
+            conflict_score, unresolved_conflict = self._resolve_conflicts(
+                hits,
+                relations,
+            )
 
         selected = self._diversify(
-            [hit for hit in relevant_hits if not hit.excluded_due_to_conflict],
+            [
+                hit
+                for hit in candidate_hits
+                if not hit.excluded_due_to_conflict
+            ],
             limit=self.settings.final_context_chunks,
             max_per_document=2,
         )
@@ -142,13 +208,24 @@ class CareRetriever:
         ordered_hits = selected + [hit for hit in hits if hit.chunk.chunk_id not in selected_ids]
         ordered_hits = ordered_hits[: max(self.settings.final_context_chunks, 12)]
 
-        confidence = self._confidence(selected, conflict_score)
-        should_abstain, reason = self._abstention(
+        confidence = self._profile_confidence(
             selected,
-            confidence,
-            unresolved_conflict,
-            analysis,
+            conflict_score,
+            stages,
         )
+        if not selected:
+            should_abstain = True
+            reason = "no_active_evidence_after_conflict_resolution"
+        elif stages.abstention:
+            should_abstain, reason = self._abstention(
+                selected,
+                confidence,
+                unresolved_conflict,
+                analysis,
+            )
+        else:
+            should_abstain = False
+            reason = None
         evidence_dates = [
             hit.chunk.updated_at or hit.chunk.published_at
             for hit in selected
@@ -381,6 +458,24 @@ class CareRetriever:
         conflict_score = clamp(weighted_conflict / total_weight) if total_weight else 0.0
         unresolved_score = clamp(unresolved / total_weight) if total_weight else 0.0
         return conflict_score, unresolved_score
+
+    def _profile_confidence(
+        self,
+        hits: Sequence[SearchHit],
+        conflict_score: float,
+        stages: RetrievalStages,
+    ) -> float:
+        if not hits:
+            return 0.0
+        if stages.care:
+            return self._confidence(hits, conflict_score)
+        if stages.rerank:
+            return clamp(hits[0].rerank_score)
+        if stages.dense and stages.lexical:
+            return clamp(hits[0].rrf_normalized)
+        if stages.dense:
+            return clamp(hits[0].dense_score)
+        return clamp(hits[0].lexical_score)
 
     @staticmethod
     def _evidence_strength(hit: SearchHit) -> float:
