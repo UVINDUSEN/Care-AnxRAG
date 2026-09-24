@@ -16,6 +16,9 @@ from .evaluation import evaluate as run_evaluation
 from .evaluation import load_benchmark
 from .logging_utils import configure_logging
 from .runtime import build_runtime
+from .safety import SafetyRouter
+from .safety_evaluation import evaluate_safety as run_safety_evaluation
+from .safety_evaluation import load_safety_benchmark
 from .scaffold import scaffold_project
 from .util import redact_sensitive_settings, utc_now
 
@@ -198,6 +201,20 @@ def evaluate(
 ) -> None:
     runtime = _runtime(project_root)
     report = run_evaluation(runtime.retriever, runtime.rag, load_benchmark(benchmark))
+    typer.echo(_json(report.as_dict()))
+
+
+@app.command("evaluate-safety")
+def evaluate_safety_command(
+    benchmark: Annotated[
+        Path,
+        typer.Argument(help="Safety-router benchmark JSONL file"),
+    ],
+) -> None:
+    report = run_safety_evaluation(
+        SafetyRouter(),
+        load_safety_benchmark(benchmark),
+    )
     typer.echo(_json(report.as_dict()))
 
 
