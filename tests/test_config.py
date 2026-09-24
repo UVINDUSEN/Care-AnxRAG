@@ -138,3 +138,25 @@ def test_free_form_ollama_answer_generation_is_rejected(project: Path) -> None:
                 "CARE_GENERATOR_PROVIDER": "ollama",
             },
         )
+
+
+
+def test_retrieval_profile_defaults_to_full_care(project: Path) -> None:
+    settings = Settings.from_env(project_root=project, environ={})
+    assert settings.retrieval_profile == "care_full"
+
+
+def test_retrieval_profile_can_select_ablation(project: Path) -> None:
+    settings = Settings.from_env(
+        project_root=project,
+        environ={"CARE_RETRIEVAL_PROFILE": "b2_hybrid_rrf"},
+    )
+    assert settings.retrieval_profile == "b2_hybrid_rrf"
+
+
+def test_invalid_retrieval_profile_is_rejected(project: Path) -> None:
+    with pytest.raises(ValueError, match="CARE_RETRIEVAL_PROFILE"):
+        Settings.from_env(
+            project_root=project,
+            environ={"CARE_RETRIEVAL_PROFILE": "made_up"},
+        )
