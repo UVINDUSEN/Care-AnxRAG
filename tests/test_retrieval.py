@@ -789,3 +789,138 @@ def test_care_score_penalizes_explicit_comorbidity_mismatch(runtime) -> None:
     )
 
     assert mismatch < unknown < matching
+
+
+
+def test_abstention_rejects_split_outcome_and_comorbidity_evidence(runtime) -> None:
+    from types import SimpleNamespace
+
+    analysis = QueryAnalyzer().analyze(
+        "What evidence supports CBT for GAD with major depressive disorder "
+        "for remission?"
+    )
+
+    def hit(source_id, outcomes, comorbidities):
+        return SimpleNamespace(
+            relevance_score=0.90,
+            care_score=0.90,
+            chunk=SimpleNamespace(
+                source_id=source_id,
+                topics=["anxiety", "generalized_anxiety_disorder"],
+                title="CBT for generalized anxiety disorder",
+                section_heading="Results",
+                text=(
+                    "Cognitive behavioural therapy was evaluated in "
+                    "generalized anxiety disorder."
+                ),
+                metadata={
+                    "clinical_facets": {
+                        "outcomes": outcomes,
+                        "comorbidities": comorbidities,
+                    }
+                },
+            ),
+        )
+
+    split_evidence = [
+        hit(
+            "remission-only",
+            ["remission"],
+            [],
+        ),
+        hit(
+            "depression-only",
+            ["quality_of_life"],
+            ["major_depressive_disorder"],
+        ),
+    ]
+
+    should_abstain, reason = runtime.retriever._abstention(
+        split_evidence,
+        confidence=0.90,
+        unresolved_conflict=0.0,
+        analysis=analysis,
+    )
+
+    assert should_abstain
+    assert reason == (
+        "insufficient_direct_evidence_for_requested_clinical_context"
+    )
+
+
+def test_abstention_accepts_joint_outcome_and_comorbidity_evidence(runtime) -> None:
+    from types import SimpleNamespace
+
+    analysis = QueryAnalyzer().analyze(
+        "What evidence supports CBT for GAD with major depressive disorder "
+        "for remission?"
+    )
+
+    direct_hit = SimpleNamespace(
+        relevance_score=0.90,
+        care_score=0.90,
+        chunk=SimpleNamespace(
+            source_id="joint-evidence",
+            topics=["anxiety", "generalized_anxiety_disorder"],
+            title="CBT for GAD with depression",
+            section_heading="Results",
+            text=(
+                "Cognitive behavioural therapy was evaluated in "
+                "generalized anxiety disorder."
+            ),
+            metadata={
+                "clinical_facets": {
+                    "outcomes": ["remission"],
+                    "comorbidities": ["major_depressive_disorder"],
+                }
+            },
+        ),
+    )
+
+    should_abstain, reason = runtime.retriever._abstention(
+        [direct_hit],
+        confidence=0.90,
+        unresolved_conflict=0.0,
+        analysis=analysis,
+    )
+
+    assert not should_abstain
+    assert reason is None
+
+
+def test_abstention_checks_outcome_comorbidity_without_named_treatment(runtime) -> None:
+    from types import SimpleNamespace
+
+    analysis = QueryAnalyzer().analyze(
+        "What remission evidence exists for GAD with major depressive disorder?"
+    )
+
+    irrelevant_context = SimpleNamespace(
+        relevance_score=0.90,
+        care_score=0.90,
+        chunk=SimpleNamespace(
+            source_id="wrong-context",
+            topics=["anxiety", "generalized_anxiety_disorder"],
+            title="GAD evidence",
+            section_heading="Results",
+            text="Generalized anxiety disorder was evaluated.",
+            metadata={
+                "clinical_facets": {
+                    "outcomes": ["quality_of_life"],
+                    "comorbidities": [],
+                }
+            },
+        ),
+    )
+
+    should_abstain, reason = runtime.retriever._abstention(
+        [irrelevant_context],
+        confidence=0.90,
+        unresolved_conflict=0.0,
+        analysis=analysis,
+    )
+
+    assert should_abstain
+    assert reason == (
+        "insufficient_direct_evidence_for_requested_clinical_context"
+    )
