@@ -516,3 +516,81 @@ def test_abstention_requires_support_for_each_requested_treatment(runtime) -> No
 
     assert not should_abstain
     assert reason is None
+
+
+
+def test_retrieval_profile_stage_contract() -> None:
+    from care_anxrag.retrieval import retrieval_stages_for_profile
+
+    expected = {
+        "b0_dense": (True, False, False, False, False, False, False),
+        "b1_lexical": (False, True, False, False, False, False, False),
+        "b2_hybrid_rrf": (True, True, False, False, False, False, False),
+        "b3_hybrid_rerank": (True, True, True, False, False, False, False),
+        "b4_care": (True, True, True, True, False, False, False),
+        "b5_conflict": (True, True, True, True, True, False, False),
+        "care_full": (True, True, True, True, True, True, True),
+    }
+
+    for profile, flags in expected.items():
+        stages = retrieval_stages_for_profile(profile)
+        assert (
+            stages.dense,
+            stages.lexical,
+            stages.rerank,
+            stages.care,
+            stages.conflict,
+            stages.relevance_gate,
+            stages.abstention,
+        ) == flags
+
+
+def test_dense_only_profile_skips_lexical_search(runtime, monkeypatch) -> None:
+    runtime.retriever.settings.retrieval_profile = "b0_dense"
+    calls = {"dense": 0, "lexical": 0}
+
+    monkeypatch.setattr(
+        runtime.retriever.embedder,
+        "embed",
+        lambda texts: [[0.0]],
+    )
+
+    def dense(query_embedding, preferred_layers):
+        calls["dense"] += 1
+        return []
+
+    def lexical(query):
+        calls["lexical"] += 1
+        raise AssertionError("lexical search must not run in b0_dense")
+
+    monkeypatch.setattr(runtime.retriever, "_dense_search", dense)
+    monkeypatch.setattr(runtime.retriever, "_lexical_search", lexical)
+
+    runtime.retriever.retrieve("panic disorder evidence")
+
+    assert calls == {"dense": 1, "lexical": 0}
+
+
+def test_lexical_only_profile_skips_embedding_and_dense_search(runtime, monkeypatch) -> None:
+    runtime.retriever.settings.retrieval_profile = "b1_lexical"
+    calls = {"embed": 0, "dense": 0, "lexical": 0}
+
+    def embed(texts):
+        calls["embed"] += 1
+        raise AssertionError("embedding must not run in b1_lexical")
+
+    def dense(query_embedding, preferred_layers):
+        calls["dense"] += 1
+        raise AssertionError("dense search must not run in b1_lexical")
+
+    def lexical(query):
+        calls["lexical"] += 1
+        return []
+
+    monkeypatch.setattr(runtime.retriever.embedder, "embed", embed)
+    monkeypatch.setattr(runtime.retriever, "_dense_search", dense)
+    monkeypatch.setattr(runtime.retriever, "_lexical_search", lexical)
+
+    runtime.retriever.retrieve("panic disorder evidence")
+
+    assert calls == {"embed": 0, "dense": 0, "lexical": 1}
