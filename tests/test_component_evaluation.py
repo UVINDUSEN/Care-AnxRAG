@@ -7,6 +7,7 @@ from care_anxrag.component_evaluation import (
     evaluate_embedding_model,
     evaluate_nli_model,
     evaluate_reranker,
+    load_embedding_benchmark,
 )
 from care_anxrag.models import RelationLabel
 
@@ -142,3 +143,58 @@ def test_component_benchmarks_preserve_review_metadata() -> None:
     assert item.stratum == "different_follow_up"
     assert item.split == "test"
     assert item.adjudicated is True
+
+
+
+def test_component_loader_rejects_duplicate_ids(tmp_path) -> None:
+    path = tmp_path / "embedding.jsonl"
+    path.write_text(
+        '{"id":"same","query":"q1","positive_text":"p","negative_texts":["n"]}\n'
+        '{"id":"same","query":"q2","positive_text":"p","negative_texts":["n"]}\n',
+        encoding="utf-8",
+    )
+
+    import pytest
+
+    with pytest.raises(ValueError, match="Duplicate embedding benchmark item id"):
+        load_embedding_benchmark(path)
+
+
+def test_evaluate_component_cli_uses_configured_embedding(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import json
+
+    from typer.testing import CliRunner
+
+    import care_anxrag.cli as cli
+
+    path = tmp_path / "embedding.jsonl"
+    path.write_text(
+        '{"id":"e1","query":"query-good","positive_text":"positive-good",'
+        '"negative_texts":["negative-good"]}\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "_build_embedder",
+        lambda settings: StubEmbedder(),
+        raising=False,
+    )
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "evaluate-component",
+            "embedding",
+            str(path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["component"] == "embedding"
+    assert payload["report"]["top1_accuracy"] == 1.0
+    assert payload["model_id"] == "stub-embedding"
