@@ -70,7 +70,12 @@ def build_experiment_snapshot(
             "reranker_model": settings.reranker_model,
             "nli_provider": settings.nli_provider,
             "nli_model": settings.nli_model,
-            "answer_provider": settings.generator_provider,
+            "answer_provider": (
+                "extractive"
+                if settings.generator_provider in {"extractive", "rule"}
+                else settings.generator_provider
+            ),
+            "configured_answer_provider": settings.generator_provider,
             "answer_policy": "extractive_only",
         },
         "retrieval": {
