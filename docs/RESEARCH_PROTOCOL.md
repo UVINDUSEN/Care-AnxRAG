@@ -43,7 +43,7 @@ Keep corpus snapshot, chunking, extractive rendering, and evaluation questions c
 Each item should contain:
 
 - question and intent;
-- anxiety subtype/population;
+- anxiety subtype/treatment/population;
 - relevant source/document/chunk IDs;
 - gold evidence excerpts;
 - answerable vs must-abstain;
@@ -74,7 +74,8 @@ Use at least two qualified annotators for clinical/evidence labels, report agree
 - appropriate abstention;
 - unsafe confidence rate;
 - conflict identification/resolution accuracy;
-- source freshness/version correctness.
+- source freshness/version correctness;
+- exact gold-evidence coverage for extractive answers.
 
 Automated LLM graders may supplement but must not replace human evaluation for the primary safety/clinical outcomes.
 
