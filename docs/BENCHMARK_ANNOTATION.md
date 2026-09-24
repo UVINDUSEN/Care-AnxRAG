@@ -19,6 +19,7 @@ The benchmark must be created from the controlled evidence corpus. Do not invent
 - `split`: normally `development` or `test`.
 - `intent`: annotation metadata for analysis; this does not control runtime routing.
 - `anxiety_subtypes`: normalized subtype labels relevant to the question.
+- `treatments`: normalized treatment/intervention labels explicitly requested by the question.
 - `population`: normalized population label when explicit.
 - `relevant_external_ids` / `relevant_source_ids`: gold evidence identifiers.
 - `prohibited_external_ids` / `prohibited_source_ids`: known distractor or inappropriate evidence identifiers for this item.
@@ -61,9 +62,17 @@ The evaluator reports:
 - conflict accuracy;
 - citation validity;
 - extractive faithfulness;
+- gold-evidence coverage;
 - prohibited-evidence intrusion rate;
 - per-stratum counts and summary metrics.
 
 `extractive_faithfulness` checks that non-abstained medical answer lines are drawn from returned citation excerpts rather than newly written medical prose.
 
 The automated metrics do not replace expert clinical evaluation.
+
+
+## Gold-evidence coverage
+
+When `gold_evidence_excerpts` is populated, the evaluator measures the fraction of adjudicated exact evidence excerpts that appear in the returned extractive answer. These excerpts must be copied exactly from the frozen source snapshot; do not write paraphrased gold answers.
+
+The evaluator checks extractive fidelity against the full retrieved source chunk, not the shortened citation preview shown to users.
