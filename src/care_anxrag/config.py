@@ -6,6 +6,17 @@ from pathlib import Path
 from typing import Mapping
 
 
+RETRIEVAL_PROFILES = {
+    "b0_dense",
+    "b1_lexical",
+    "b2_hybrid_rrf",
+    "b3_hybrid_rerank",
+    "b4_care",
+    "b5_conflict",
+    "care_full",
+}
+
+
 def _as_bool(value: str | None, default: bool) -> bool:
     if value is None:
         return default
@@ -106,6 +117,7 @@ class Settings:
     rerank_candidates: int = 20
     final_context_chunks: int = 6
     rrf_k: int = 60
+    retrieval_profile: str = "care_full"
 
     minimum_care_score: float = 0.43
     minimum_relevance_score: float = 0.24
@@ -169,6 +181,7 @@ class Settings:
             rerank_candidates=_as_int(env.get("CARE_RERANK_CANDIDATES"), 20),
             final_context_chunks=_as_int(env.get("CARE_FINAL_CONTEXT_CHUNKS"), 6),
             rrf_k=_as_int(env.get("CARE_RRF_K"), 60),
+            retrieval_profile=env.get("CARE_RETRIEVAL_PROFILE", "care_full").lower(),
             minimum_care_score=_as_float(env.get("CARE_MINIMUM_CARE_SCORE"), 0.43),
             minimum_relevance_score=_as_float(
                 env.get("CARE_MINIMUM_RELEVANCE_SCORE"), 0.24
@@ -237,6 +250,11 @@ class Settings:
             raise ValueError("Unsupported reranker provider")
         if self.nli_provider not in {"cross_encoder", "heuristic"}:
             raise ValueError("Unsupported NLI provider")
+        if self.retrieval_profile not in RETRIEVAL_PROFILES:
+            raise ValueError(
+                "CARE_RETRIEVAL_PROFILE must be one of: "
+                + ", ".join(sorted(RETRIEVAL_PROFILES))
+            )
         positive_ints = [
             self.dense_candidates,
             self.lexical_candidates,
