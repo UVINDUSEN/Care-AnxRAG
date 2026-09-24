@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import re
 
-from .clinical_match import extract_treatment_concepts
+from .clinical_match import (
+    extract_comorbidity_concepts,
+    extract_outcome_concepts,
+    extract_treatment_concepts,
+)
 from .models import KnowledgeLayer, QueryAnalysis, QueryIntent, SafetyLevel
 from .util import normalize_whitespace
 
@@ -83,6 +87,8 @@ class QueryAnalyzer:
         ]
 
         treatments = sorted(extract_treatment_concepts(normalized))
+        outcomes = sorted(extract_outcome_concepts(normalized))
+        comorbidities = sorted(extract_comorbidity_concepts(normalized))
 
         intent = self._intent(normalized)
 
@@ -126,6 +132,8 @@ class QueryAnalyzer:
             intent=intent,
             anxiety_subtypes=subtypes,
             treatments=treatments,
+            outcomes=outcomes,
+            comorbidities=comorbidities,
             population=population,
             wants_recent=wants_recent,
             preferred_layers=preferred_layers,
@@ -142,7 +150,7 @@ class QueryAnalyzer:
             return QueryIntent.RECENT_RESEARCH
 
         if re.search(
-            r"\b(medicine|medication|drug|ssri|snri|benzodiazepine|dose|side effect)\b",
+            r"\b(medicine|medications?|drugs?|ssris?|snris?|benzodiazepines?|dos(?:e|es)|side effects?|adverse effects?)\b",
             query,
         ):
             return QueryIntent.MEDICATION
