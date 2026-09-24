@@ -257,6 +257,12 @@ def build_clinical_evidence_facets(
         "populations": sorted(
             extract_population_concepts(text)
         ),
+        "outcomes": sorted(
+            extract_outcome_concepts(text)
+        ),
+        "comorbidities": sorted(
+            extract_comorbidity_concepts(text)
+        ),
         "pico": pico,
         "provenance": {
             "normalized_concepts": (
@@ -269,6 +275,25 @@ def build_clinical_evidence_facets(
             ),
         },
     }
+
+
+def concept_set_compatibility(
+    requested: Iterable[str],
+    evidence: Iterable[str],
+    *,
+    mismatch_score: float,
+    unknown_score: float,
+) -> float:
+    requested_set = set(requested)
+    if not requested_set:
+        return 1.0
+
+    evidence_set = set(evidence)
+    if requested_set & evidence_set:
+        return 1.0
+    if evidence_set:
+        return mismatch_score
+    return unknown_score
 
 
 def treatment_compatibility(
