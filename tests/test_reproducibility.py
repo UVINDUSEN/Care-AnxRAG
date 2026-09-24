@@ -22,8 +22,13 @@ def test_snapshot_records_active_evidence_and_runtime_configuration(
         title="GAD Guidance",
         topics=["anxiety", "generalized_anxiety_disorder"],
         body=(
-            "Generalized anxiety disorder guidance. "
-            "Cognitive behavioural therapy is discussed."
+            "Generalized anxiety disorder is characterized by persistent and "
+            "excessive worry that can interfere with daily functioning. "
+            "Clinical guidance discusses assessment, functional impairment, "
+            "and evidence-based psychological treatment. Cognitive behavioural "
+            "therapy is discussed as a treatment option for generalized anxiety "
+            "disorder, with care decisions interpreted by qualified clinicians. "
+            "Follow-up should consider symptoms, functioning, and individual context."
         ),
     )
     runtime.ingestion.sync(
@@ -116,7 +121,15 @@ def test_database_lists_only_active_version_fingerprints(
         external_id="active-doc",
         title="Active document",
         topics=["anxiety"],
-        body="Evidence about anxiety.",
+        body=(
+            "This clinical guidance discusses anxiety disorders, including "
+            "assessment, symptom burden, functional impact, and evidence-based "
+            "care. It describes the importance of evaluating persistent anxiety "
+            "in clinical context and considering psychological interventions, "
+            "ongoing monitoring, and individualized professional assessment. "
+            "The document is intentionally long enough to pass the normal "
+            "ingestion quality gate used by CARE-AnxRAG."
+        ),
     )
     runtime.ingestion.sync(
         source_ids=["test_core"],
