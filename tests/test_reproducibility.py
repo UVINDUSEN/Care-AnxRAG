@@ -153,3 +153,39 @@ def test_database_lists_only_active_version_fingerprints(
         "updated_at",
         "retrieved_at",
     }
+
+
+
+def test_snapshot_experiment_cli_writes_json(project, monkeypatch) -> None:
+    import json
+
+    from typer.testing import CliRunner
+
+    from care_anxrag.cli import app
+
+    monkeypatch.setenv("CARE_VECTOR_BACKEND", "sqlite")
+    monkeypatch.setenv("CARE_EMBEDDING_PROVIDER", "hash")
+    monkeypatch.setenv("CARE_EMBEDDING_DIMENSIONS", "256")
+    monkeypatch.setenv("CARE_GENERATOR_PROVIDER", "extractive")
+    monkeypatch.setenv("CARE_RERANKER_PROVIDER", "heuristic")
+    monkeypatch.setenv("CARE_NLI_PROVIDER", "heuristic")
+    monkeypatch.setenv("CARE_ALLOW_NETWORK_SYNC", "false")
+
+    output = project / "experiment-snapshot.json"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "snapshot-experiment",
+            str(output),
+            "--code-revision",
+            "abc123",
+            "--project-root",
+            str(project),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["code_revision"] == "abc123"
+    assert payload["models"]["answer_policy"] == "extractive_only"
