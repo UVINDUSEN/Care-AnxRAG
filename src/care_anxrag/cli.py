@@ -309,6 +309,44 @@ def snapshot_experiment_command(
     typer.echo(_json({"output": str(output), "snapshot": snapshot}))
 
 
+@app.command("evaluate-safety")
+def evaluate_safety_command(
+    benchmark: Annotated[Path, typer.Argument(help="Safety benchmark JSONL file")],
+) -> None:
+    """Evaluate the deterministic pre-retrieval safety router."""
+    report = run_safety_evaluation(
+        SafetyRouter(),
+        load_safety_benchmark(benchmark),
+    )
+    typer.echo(_json(report.as_dict()))
+
+
+@app.command("snapshot-experiment")
+def snapshot_experiment_command(
+    output: Annotated[Path, typer.Argument(help="Output JSON file")],
+    code_revision: Annotated[
+        str | None,
+        typer.Option(help="Exact code revision used for the experiment"),
+    ] = None,
+    benchmark: Annotated[
+        Path | None,
+        typer.Option(help="Optional benchmark file to fingerprint"),
+    ] = None,
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Write a reproducibility snapshot for a research run."""
+    runtime = _runtime(project_root)
+    snapshot = build_experiment_snapshot(
+        runtime,
+        code_revision=code_revision,
+        benchmark_path=benchmark,
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(_json(snapshot) + "\n", encoding="utf-8")
+    typer.echo(_json({"output": str(output.resolve())}))
+
+
+
 @app.command()
 def selfcheck(
     offline: Annotated[
