@@ -12,11 +12,16 @@ import typer
 import uvicorn
 
 from .config import Settings
+from .coverage import audit_corpus_coverage
 from .evaluation import evaluate as run_evaluation
+from .evaluation import evaluate_ablation as run_ablation
 from .evaluation import load_benchmark
 from .logging_utils import configure_logging
 from .reproducibility import build_experiment_snapshot
 from .runtime import build_runtime
+from .safety import SafetyRouter
+from .safety_evaluation import evaluate_safety as run_safety_evaluation
+from .safety_evaluation import load_safety_benchmark
 from .scaffold import scaffold_project
 from .util import redact_sensitive_settings, utc_now
 
@@ -108,6 +113,28 @@ def retrieve(
 def stats(project_root: Annotated[Path | None, typer.Option()] = None) -> None:
     runtime = _runtime(project_root)
     typer.echo(_json(runtime.database.stats()))
+
+
+@app.command("coverage")
+def coverage(
+    subtype: Annotated[
+        str | None,
+        typer.Option(help="Optional normalized anxiety subtype to inspect"),
+    ] = None,
+    treatment: Annotated[
+        str | None,
+        typer.Option(help="Optional normalized treatment to inspect"),
+    ] = None,
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Audit direct clinical coverage in active evidence chunks."""
+    runtime = _runtime(project_root)
+    report = audit_corpus_coverage(
+        runtime.database,
+        subtype=subtype,
+        treatment=treatment,
+    )
+    typer.echo(_json(report.as_dict()))
 
 
 @app.command()
@@ -202,51 +229,22 @@ def evaluate(
     typer.echo(_json(report.as_dict()))
 
 
-@app.command("snapshot-experiment")
-def snapshot_experiment(
-    output: Annotated[
-        Path,
-        typer.Argument(help="Destination JSON snapshot file"),
-    ],
-    code_revision: Annotated[
-        str,
-        typer.Option(
-            "--code-revision",
-            help="Exact Git commit/revision for this experiment",
-        ),
-    ],
-    benchmark: Annotated[
-        Path | None,
-        typer.Option(
-            "--benchmark",
-            help="Optional benchmark file to fingerprint",
-        ),
-    ] = None,
-    project_root: Annotated[
-        Path | None,
-        typer.Option(),
-    ] = None,
+@app.command("evaluate-ablation")
+def evaluate_ablation_command(
+    benchmark: Annotated[Path, typer.Argument(help="Benchmark JSONL file")],
+    project_root: Annotated[Path | None, typer.Option()] = None,
 ) -> None:
     runtime = _runtime(project_root)
-    snapshot = build_experiment_snapshot(
-        runtime,
-        code_revision=code_revision,
-        benchmark_path=benchmark,
-    )
-    output = output.resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        _json(snapshot) + "\n",
-        encoding="utf-8",
+    reports = run_ablation(
+        runtime.retriever,
+        runtime.rag,
+        load_benchmark(benchmark),
     )
     typer.echo(
         _json(
             {
-                "snapshot": str(output),
-                "code_revision": code_revision,
-                "active_version_count": snapshot["corpus"][
-                    "active_version_count"
-                ],
+                label: report.as_dict()
+                for label, report in reports.items()
             }
         )
     )

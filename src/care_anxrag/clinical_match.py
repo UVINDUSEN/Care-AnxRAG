@@ -71,6 +71,65 @@ _TREATMENT_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
 }
 
+_OUTCOME_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "symptom_severity": (
+        re.compile(r"\bsymptom severity\b", re.I),
+        re.compile(r"\banxiety severity\b", re.I),
+        re.compile(r"\bGAD-?7\b", re.I),
+    ),
+    "treatment_response": (
+        re.compile(r"\btreatment response\b", re.I),
+        re.compile(r"\bresponders?\b", re.I),
+        re.compile(r"\bresponse rate\b", re.I),
+    ),
+    "remission": (
+        re.compile(r"\bremission\b", re.I),
+        re.compile(r"\bremission rate\b", re.I),
+    ),
+    "relapse": (
+        re.compile(r"\brelapse\b", re.I),
+        re.compile(r"\brecurrence\b", re.I),
+    ),
+    "quality_of_life": (
+        re.compile(r"\bquality of life\b", re.I),
+        re.compile(r"\bQoL\b", re.I),
+    ),
+    "functional_impairment": (
+        re.compile(r"\bfunctional impairment\b", re.I),
+        re.compile(r"\bfunctioning\b", re.I),
+        re.compile(r"\bwork impairment\b", re.I),
+    ),
+    "adverse_effects": (
+        re.compile(r"\badverse (?:effect|effects|event|events)\b", re.I),
+        re.compile(r"\bside effects?\b", re.I),
+        re.compile(r"\btolerability\b", re.I),
+    ),
+}
+
+_COMORBIDITY_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "major_depressive_disorder": (
+        re.compile(r"\bmajor depressive disorder\b", re.I),
+        re.compile(r"\bMDD\b", re.I),
+        re.compile(r"\bcomorbid depression\b", re.I),
+        re.compile(r"\bdepressive symptoms\b", re.I),
+    ),
+    "substance_use_disorder": (
+        re.compile(r"\bsubstance use disorder\b", re.I),
+        re.compile(r"\balcohol use disorder\b", re.I),
+    ),
+    "insomnia": (
+        re.compile(r"\binsomnia\b", re.I),
+    ),
+    "post_traumatic_stress_disorder": (
+        re.compile(r"\bpost[- ]traumatic stress disorder\b", re.I),
+        re.compile(r"\bPTSD\b", re.I),
+    ),
+    "obsessive_compulsive_disorder": (
+        re.compile(r"\bobsessive[- ]compulsive disorder\b", re.I),
+        re.compile(r"\bOCD\b", re.I),
+    ),
+}
+
 _POPULATION_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "children_and_adolescents": (
         re.compile(r"\bchildren?\b", re.I),
@@ -117,11 +176,124 @@ def extract_treatment_concepts(text: str) -> set[str]:
     return _extract(text, _TREATMENT_PATTERNS)
 
 
+def extract_outcome_concepts(text: str) -> set[str]:
+    return _extract(text, _OUTCOME_PATTERNS)
+
+
+def extract_comorbidity_concepts(text: str) -> set[str]:
+    return _extract(text, _COMORBIDITY_PATTERNS)
+
+
 def extract_population_concepts(text: str) -> set[str]:
     concepts = _extract(text, _POPULATION_PATTERNS)
     if "older_adults" in concepts:
         concepts.discard("adults")
     return concepts
+
+
+def _annotation_values(
+    raw: object,
+) -> list[str]:
+    if isinstance(raw, str):
+        value = raw.strip()
+        return [value] if value else []
+    if not isinstance(
+        raw,
+        (list, tuple, set),
+    ):
+        return []
+    values: list[str] = []
+    for item in raw:
+        value = str(item).strip()
+        if value and value not in values:
+            values.append(value)
+    return values
+
+
+def build_clinical_evidence_facets(
+    text: str,
+    topics: Iterable[str],
+    annotated_pico: object = None,
+) -> dict[str, object]:
+    """Build traceable clinical facets without model-generated medical facts."""
+    normalized_topics = {
+        str(topic).strip().lower().replace(" ", "_")
+        for topic in topics
+        if str(topic).strip()
+    }
+    subtype_topics = (
+        normalized_topics
+        & set(_SUBTYPE_PATTERNS)
+    )
+
+    pico_input = (
+        annotated_pico
+        if isinstance(annotated_pico, dict)
+        else {}
+    )
+    pico = {
+        "population": _annotation_values(
+            pico_input.get("population")
+        ),
+        "intervention": _annotation_values(
+            pico_input.get("intervention")
+        ),
+        "comparator": _annotation_values(
+            pico_input.get("comparator")
+        ),
+        "outcome": _annotation_values(
+            pico_input.get("outcome")
+        ),
+    }
+
+    return {
+        "anxiety_subtypes": sorted(
+            extract_subtype_concepts(text)
+            | subtype_topics
+        ),
+        "treatments": sorted(
+            extract_treatment_concepts(text)
+        ),
+        "populations": sorted(
+            extract_population_concepts(text)
+        ),
+        "outcomes": sorted(
+            extract_outcome_concepts(text)
+        ),
+        "comorbidities": sorted(
+            extract_comorbidity_concepts(text)
+        ),
+        "pico": pico,
+        "provenance": {
+            "normalized_concepts": (
+                "deterministic_phrase_match"
+            ),
+            "pico": (
+                "source_or_reviewer_metadata"
+                if any(pico.values())
+                else "not_annotated"
+            ),
+        },
+    }
+
+
+def concept_set_compatibility(
+    requested: Iterable[str],
+    evidence: Iterable[str],
+    *,
+    mismatch_score: float,
+    unknown_score: float,
+) -> float:
+    requested_set = set(requested)
+    if not requested_set:
+        return 1.0
+
+    evidence_set = set(evidence)
+    if requested_set & evidence_set:
+        return 1.0
+    if evidence_set:
+        return mismatch_score
+    return unknown_score
 
 
 def treatment_compatibility(
@@ -151,6 +323,77 @@ def population_compatibility(
     if evidence:
         return 0.60
     return 0.90
+
+
+def supports_explicit_clinical_context(
+    requested_subtypes: Iterable[str],
+    requested_treatments: Iterable[str],
+    requested_population: str | None,
+    requested_outcomes: Iterable[str],
+    requested_comorbidities: Iterable[str],
+    topics: Iterable[str],
+    evidence_text: str,
+    evidence_facets: dict[str, object] | None = None,
+) -> bool:
+    """Require one evidence item to support the explicitly requested clinical context."""
+    requested_treatments_set = set(requested_treatments)
+    if requested_treatments_set:
+        evidence_treatments = extract_treatment_concepts(evidence_text)
+        if not requested_treatments_set.issubset(evidence_treatments):
+            return False
+
+    requested_subtypes_set = set(requested_subtypes)
+    if requested_subtypes_set:
+        normalized_topics = {
+            str(topic).strip().lower().replace(" ", "_")
+            for topic in topics
+        }
+        evidence_subtypes = extract_subtype_concepts(evidence_text) | (
+            normalized_topics & set(_SUBTYPE_PATTERNS)
+        )
+        if not requested_subtypes_set.issubset(evidence_subtypes):
+            return False
+
+    if requested_population:
+        evidence_populations = extract_population_concepts(evidence_text)
+        if evidence_populations and requested_population not in evidence_populations:
+            return False
+
+    facets = evidence_facets if isinstance(evidence_facets, dict) else {}
+
+    requested_outcomes_set = set(requested_outcomes)
+    if requested_outcomes_set:
+        facet_outcomes = facets.get("outcomes", [])
+        evidence_outcomes = (
+            {
+                str(value)
+                for value in facet_outcomes
+                if str(value).strip()
+            }
+            if isinstance(facet_outcomes, list)
+            else set()
+        )
+        evidence_outcomes |= extract_outcome_concepts(evidence_text)
+        if not requested_outcomes_set.issubset(evidence_outcomes):
+            return False
+
+    requested_comorbidities_set = set(requested_comorbidities)
+    if requested_comorbidities_set:
+        facet_comorbidities = facets.get("comorbidities", [])
+        evidence_comorbidities = (
+            {
+                str(value)
+                for value in facet_comorbidities
+                if str(value).strip()
+            }
+            if isinstance(facet_comorbidities, list)
+            else set()
+        )
+        evidence_comorbidities |= extract_comorbidity_concepts(evidence_text)
+        if not requested_comorbidities_set.issubset(evidence_comorbidities):
+            return False
+
+    return True
 
 
 def supports_explicit_treatment_query(
