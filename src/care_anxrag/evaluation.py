@@ -116,6 +116,9 @@ def evaluate(
     rag: CareAnxRag,
     items: Iterable[BenchmarkItem],
 ) -> EvaluationReport:
+    benchmark_items = list(items)
+    _validate_locked_test_items(benchmark_items)
+
     rows: list[dict[str, Any]] = []
     recalls: list[float] = []
     precisions: list[float] = []
@@ -131,7 +134,7 @@ def evaluate(
     stale_evidence_intrusions: list[float] = []
     stratum_rows: dict[str, list[dict[str, Any]]] = {}
 
-    for item in items:
+    for item in benchmark_items:
         retrieval = retriever.retrieve(item.question)
         top_hits = [hit for hit in retrieval.hits if not hit.excluded_due_to_conflict][:5]
         relevant_flags = [_is_relevant(hit.chunk.source_id, hit.chunk.metadata, item) for hit in top_hits]
@@ -290,6 +293,22 @@ def evaluate(
         per_stratum=per_stratum,
         per_item=rows,
     )
+
+
+def _validate_locked_test_items(items: Iterable[BenchmarkItem]) -> None:
+    for item in items:
+        if item.split.lower() != "test":
+            continue
+        reviewers = {
+            annotator.strip()
+            for annotator in item.annotator_ids
+            if annotator.strip()
+        }
+        if not item.adjudicated or len(reviewers) < 2:
+            raise ValueError(
+                f"Benchmark locked test item {item.id!r} must be adjudicated "
+                "and have at least two distinct annotator IDs"
+            )
 
 
 def _is_relevant(source_id: str, metadata: dict[str, Any], item: BenchmarkItem) -> bool:
