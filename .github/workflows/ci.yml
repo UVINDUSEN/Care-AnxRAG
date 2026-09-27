@@ -49,3 +49,7 @@ jobs:
           CARE_ALLOW_NETWORK_SYNC: "false"
           CARE_HOME: /tmp/care-ci
         run: care-anxrag selfcheck --offline --project-root .
+
+
+      - name: Run full release validation
+        run: ./scripts/validate.sh
