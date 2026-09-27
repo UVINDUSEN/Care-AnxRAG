@@ -23,13 +23,16 @@ def test_corpus_freeze_blocks_unresolved_staging(runtime, project) -> None:
         topics=["anxiety"],
         body=(
             "This research evidence discusses anxiety symptoms, assessment, "
-            "functional impact, and psychological care in sufficient detail "
-            "for ingestion validation. It is deliberately held for manual "
-            "review instead of being promoted into the active corpus."
+            "functional impact, psychological care, monitoring, follow-up, "
+            "and evidence interpretation in sufficient detail for ingestion "
+            "validation. It deliberately contains enough substantive clinical "
+            "text to pass the repository quality gate while remaining held for "
+            "manual review instead of being promoted into the active corpus. "
+            "The fixture describes persistent worry, impairment, assessment, "
+            "treatment context, and follow-up without asserting fabricated outcomes."
         ),
     )
-    source = next(source for source in runtime.sources if source.id == "test_core")
-    source.auto_promote = False
+    runtime.ingestion.sources_by_id["test_core"].auto_promote = False
     runtime.ingestion.sync(source_ids=["test_core"], force=True)
 
     report = build_corpus_freeze(runtime, code_revision="abc123")
@@ -49,9 +52,13 @@ def test_corpus_freeze_blocks_open_evidence_alert(runtime) -> None:
         title="Target evidence",
         topics=["anxiety"],
         body=(
-            "This active guidance discusses anxiety assessment, symptoms, "
-            "functional impairment, and evidence-based care in enough detail "
-            "to pass ingestion validation and become active evidence."
+            "This active guidance discusses anxiety assessment, persistent "
+            "symptoms, functional impairment, evidence-based psychological care, "
+            "monitoring, follow-up, and individualized interpretation in enough "
+            "detail to pass ingestion validation and become active evidence. "
+            "It also describes the importance of evaluating symptom burden, "
+            "functioning, treatment context, and change over time using qualified "
+            "clinical judgment rather than relying on a single isolated signal."
         ),
     )
     runtime.ingestion.sync(source_ids=["test_core"], force=True)
