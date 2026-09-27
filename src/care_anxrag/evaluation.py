@@ -9,6 +9,7 @@ from typing import Any, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .models import DocumentStatus
 from .rag import CareAnxRag
 from .retrieval import CareRetriever
 
@@ -54,6 +55,10 @@ class EvaluationReport:
     gold_evidence_coverage: float
     prohibited_evidence_evaluable_count: int
     prohibited_evidence_intrusion_rate: float
+    active_version_evaluable_count: int
+    active_version_accuracy: float
+    stale_evidence_evaluable_count: int
+    stale_evidence_intrusion_rate: float
     per_stratum: dict[str, dict[str, Any]]
     per_item: list[dict[str, Any]]
 
@@ -74,6 +79,10 @@ class EvaluationReport:
             "gold_evidence_coverage": self.gold_evidence_coverage,
             "prohibited_evidence_evaluable_count": self.prohibited_evidence_evaluable_count,
             "prohibited_evidence_intrusion_rate": self.prohibited_evidence_intrusion_rate,
+            "active_version_evaluable_count": self.active_version_evaluable_count,
+            "active_version_accuracy": self.active_version_accuracy,
+            "stale_evidence_evaluable_count": self.stale_evidence_evaluable_count,
+            "stale_evidence_intrusion_rate": self.stale_evidence_intrusion_rate,
             "per_stratum": self.per_stratum,
             "per_item": self.per_item,
         }
@@ -118,6 +127,8 @@ def evaluate(
     extractive_checks: list[float] = []
     gold_evidence_coverages: list[float] = []
     prohibited_intrusions: list[float] = []
+    active_version_accuracies: list[float] = []
+    stale_evidence_intrusions: list[float] = []
     stratum_rows: dict[str, list[dict[str, Any]]] = {}
 
     for item in items:
@@ -177,6 +188,30 @@ def evaluate(
             )
             prohibited_intrusions.append(float(prohibited_intrusion))
 
+        active_version_accuracy: float | None = None
+        stale_evidence_intrusion_rate: float | None = None
+        if top_hits:
+            active_version_accuracy = (
+                sum(
+                    hit.chunk.status == DocumentStatus.ACTIVE
+                    for hit in top_hits
+                )
+                / len(top_hits)
+            )
+            stale_evidence_intrusion_rate = (
+                sum(
+                    hit.chunk.status
+                    in {
+                        DocumentStatus.SUPERSEDED,
+                        DocumentStatus.WITHDRAWN,
+                    }
+                    for hit in top_hits
+                )
+                / len(top_hits)
+            )
+            active_version_accuracies.append(active_version_accuracy)
+            stale_evidence_intrusions.append(stale_evidence_intrusion_rate)
+
         if has_retrieval_labels:
             if recall is None or precision is None or rr is None or ndcg is None:
                 raise RuntimeError("Retrieval metrics were not calculated for a labeled item")
@@ -202,6 +237,8 @@ def evaluate(
                 "extractive_faithful": extractive_faithful,
                 "gold_evidence_coverage": gold_evidence_coverage,
                 "prohibited_evidence_intrusion": prohibited_intrusion,
+                "active_version_accuracy": active_version_accuracy,
+                "stale_evidence_intrusion_rate": stale_evidence_intrusion_rate,
                 "stratum": item.stratum,
                 "split": item.split,
                 "retrieved_chunk_ids": [hit.chunk.chunk_id for hit in top_hits],
@@ -246,6 +283,10 @@ def evaluate(
         gold_evidence_coverage=mean(gold_evidence_coverages),
         prohibited_evidence_evaluable_count=len(prohibited_intrusions),
         prohibited_evidence_intrusion_rate=mean(prohibited_intrusions),
+        active_version_evaluable_count=len(active_version_accuracies),
+        active_version_accuracy=mean(active_version_accuracies),
+        stale_evidence_evaluable_count=len(stale_evidence_intrusions),
+        stale_evidence_intrusion_rate=mean(stale_evidence_intrusions),
         per_stratum=per_stratum,
         per_item=rows,
     )
