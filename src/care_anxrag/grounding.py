@@ -131,8 +131,7 @@ class ClaimGroundingVerifier:
         }
 
         failures: list[GroundingFailure] = []
-        pairs: list[tuple[str, str]] = []
-        pair_meta: list[tuple[GroundedClaim, str]] = []
+        checked_pairs = 0
 
         for claim in claims:
             if not claim.citation_ids:
@@ -145,6 +144,7 @@ class ClaimGroundingVerifier:
                 )
                 continue
 
+            normalized_claim = normalize_whitespace(claim.text)
             for citation_id in claim.citation_ids:
                 hit = source_map.get(citation_id)
                 if hit is None:
@@ -157,38 +157,14 @@ class ClaimGroundingVerifier:
                     )
                     continue
 
-                premise = "\n".join(
-                    value
-                    for value in [
-                        hit.chunk.title,
-                        hit.chunk.section_heading,
-                        hit.chunk.text,
-                    ]
-                    if value
-                )
-                pairs.append((premise, claim.text))
-                pair_meta.append((claim, citation_id))
-
-        if pairs:
-            relations = self.nli.classify_text_pairs(pairs)
-            if len(relations) != len(pairs):
-                raise RuntimeError(
-                    "NLI grounding verifier returned an unexpected number of results: "
-                    f"expected {len(pairs)}, received {len(relations)}"
-                )
-            for (claim, citation_id), (label, confidence) in zip(
-                pair_meta,
-                relations,
-                strict=True,
-            ):
-                if label != RelationLabel.ENTAILMENT or confidence < self.threshold:
+                checked_pairs += 1
+                source_text = normalize_whitespace(hit.chunk.text)
+                if normalized_claim not in source_text:
                     failures.append(
                         GroundingFailure(
                             claim=claim.text,
                             citation_id=citation_id,
                             reason="unsupported_claim_citation",
-                            label=label,
-                            confidence=confidence,
                         )
                     )
 
@@ -204,7 +180,7 @@ class ClaimGroundingVerifier:
                 supported=False,
                 reason=reason,
                 claim_count=len(claims),
-                checked_pairs=len(pairs),
+                checked_pairs=checked_pairs,
                 failures=tuple(failures),
             )
 
@@ -212,5 +188,5 @@ class ClaimGroundingVerifier:
             supported=True,
             reason=None,
             claim_count=len(claims),
-            checked_pairs=len(pairs),
+            checked_pairs=checked_pairs,
         )
