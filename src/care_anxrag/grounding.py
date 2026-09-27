@@ -66,6 +66,7 @@ def extract_claims(answer: str) -> list[GroundedClaim]:
             continue
         citations = tuple(dict.fromkeys(_CITATION_RE.findall(sentence)))
         text = normalize_whitespace(_CITATION_RE.sub("", sentence))
+        text = re.sub(r"^[-*]\s+", "", text)
         text = re.sub(r"\s+([.!?,;:])", r"\1", text)
         if not text:
             continue
