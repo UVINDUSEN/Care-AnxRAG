@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 from pathlib import Path
@@ -9,6 +10,7 @@ from .coverage import audit_corpus_coverage
 from .evaluation import BenchmarkItem, evaluate_ablation, load_benchmark
 from .reproducibility import build_experiment_snapshot
 from .runtime import Runtime
+from .statistics import mcnemar_exact, paired_bootstrap_difference
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -67,6 +69,139 @@ def _collect_timings(runtime: Runtime, items: list[BenchmarkItem]) -> dict[str, 
     return {"count": len(rows), "per_item": rows, "stage_summary": summary}
 
 
+_BOOTSTRAP_METRICS = (
+    "recall_at_5",
+    "precision_at_5",
+    "reciprocal_rank",
+    "ndcg_at_5",
+    "gold_evidence_coverage",
+    "active_version_accuracy",
+    "stale_evidence_intrusion_rate",
+)
+
+
+def _paired_report_rows(left: dict[str, Any], right: dict[str, Any]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    right_by_id = {row["id"]: row for row in right["per_item"]}
+    return [
+        (row, right_by_id[row["id"]])
+        for row in left["per_item"]
+        if row["id"] in right_by_id
+    ]
+
+
+def _build_comparisons(ablation: dict[str, Any]) -> dict[str, Any]:
+    reference_label = "CARE_full"
+    reference = ablation[reference_label]
+    comparisons: dict[str, Any] = {}
+
+    for label, report in ablation.items():
+        if label == reference_label:
+            continue
+        pairs = _paired_report_rows(report, reference)
+        metrics: dict[str, Any] = {}
+        for metric in _BOOTSTRAP_METRICS:
+            evaluable = [
+                (float(left[metric]), float(right[metric]))
+                for left, right in pairs
+                if left.get(metric) is not None and right.get(metric) is not None
+            ]
+            if evaluable:
+                metrics[metric] = paired_bootstrap_difference(
+                    [left for left, _ in evaluable],
+                    [right for _, right in evaluable],
+                )
+
+        binary: dict[str, Any] = {}
+        binary_pairs = {
+            "abstention_correct": [
+                (
+                    left["predicted_abstain"] == left["expected_abstain"],
+                    right["predicted_abstain"] == right["expected_abstain"],
+                )
+                for left, right in pairs
+            ],
+            "conflict_correct": [
+                (
+                    (left["conflict_score"] > 0.0) == left["expected_conflict"],
+                    (right["conflict_score"] > 0.0) == right["expected_conflict"],
+                )
+                for left, right in pairs
+            ],
+            "citation_valid": [
+                (bool(left["citation_valid"]), bool(right["citation_valid"]))
+                for left, right in pairs
+            ],
+        }
+        for name, outcomes in binary_pairs.items():
+            if outcomes:
+                binary[name] = mcnemar_exact(
+                    [left for left, _ in outcomes],
+                    [right for _, right in outcomes],
+                )
+
+        comparisons[label] = {
+            "reference": reference_label,
+            "paired_item_count": len(pairs),
+            "bootstrap_metrics": metrics,
+            "mcnemar_outcomes": binary,
+        }
+
+    return {
+        "comparison_version": 1,
+        "reference": reference_label,
+        "bootstrap_difference_definition": "CARE_full minus baseline",
+        "comparisons": comparisons,
+    }
+
+
+def _write_comparisons_csv(path: Path, comparisons: dict[str, Any]) -> None:
+    fieldnames = [
+        "baseline",
+        "reference",
+        "analysis",
+        "metric",
+        "n",
+        "difference",
+        "ci95_low",
+        "ci95_high",
+        "p_value",
+        "left_only_correct",
+        "right_only_correct",
+        "discordant_pairs",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for baseline, comparison in comparisons["comparisons"].items():
+            for metric, result in comparison["bootstrap_metrics"].items():
+                writer.writerow(
+                    {
+                        "baseline": baseline,
+                        "reference": comparison["reference"],
+                        "analysis": "paired_bootstrap",
+                        "metric": metric,
+                        "n": result["n"],
+                        "difference": result["difference"],
+                        "ci95_low": result["ci95_low"],
+                        "ci95_high": result["ci95_high"],
+                    }
+                )
+            for metric, result in comparison["mcnemar_outcomes"].items():
+                writer.writerow(
+                    {
+                        "baseline": baseline,
+                        "reference": comparison["reference"],
+                        "analysis": "mcnemar_exact",
+                        "metric": metric,
+                        "n": result["n"],
+                        "p_value": result["p_value"],
+                        "left_only_correct": result["left_only_correct"],
+                        "right_only_correct": result["right_only_correct"],
+                        "discordant_pairs": result["discordant_pairs"],
+                    }
+                )
+
+
 def run_experiment_bundle(
     runtime: Runtime,
     benchmark_path: Path,
@@ -99,6 +234,7 @@ def run_experiment_bundle(
         label: report.as_dict()
         for label, report in ablation_reports.items()
     }
+    comparisons = _build_comparisons(ablation)
     coverage = audit_corpus_coverage(runtime.database).as_dict()
     timings = _collect_timings(runtime, items)
     snapshot = build_experiment_snapshot(
@@ -109,19 +245,22 @@ def run_experiment_bundle(
 
     payloads = {
         "ablation.json": ablation,
+        "comparisons.json": comparisons,
         "coverage.json": coverage,
         "timings.json": timings,
         "snapshot.json": snapshot,
     }
     for filename, payload in payloads.items():
         _write_json(output_dir / filename, payload)
+    _write_comparisons_csv(output_dir / "comparisons.csv", comparisons)
 
+    artifact_names = [*payloads, "comparisons.csv"]
     artifacts = {
         filename: {
             "sha256": _sha256_file(output_dir / filename),
             "size_bytes": (output_dir / filename).stat().st_size,
         }
-        for filename in sorted(payloads)
+        for filename in sorted(artifact_names)
     }
     manifest = {
         "bundle_version": 1,
