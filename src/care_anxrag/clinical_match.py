@@ -71,6 +71,65 @@ _TREATMENT_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
 }
 
+_OUTCOME_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "symptom_severity": (
+        re.compile(r"\bsymptom severity\b", re.I),
+        re.compile(r"\banxiety severity\b", re.I),
+        re.compile(r"\bGAD-?7\b", re.I),
+    ),
+    "treatment_response": (
+        re.compile(r"\btreatment response\b", re.I),
+        re.compile(r"\bresponders?\b", re.I),
+        re.compile(r"\bresponse rate\b", re.I),
+    ),
+    "remission": (
+        re.compile(r"\bremission\b", re.I),
+        re.compile(r"\bremission rate\b", re.I),
+    ),
+    "relapse": (
+        re.compile(r"\brelapse\b", re.I),
+        re.compile(r"\brecurrence\b", re.I),
+    ),
+    "quality_of_life": (
+        re.compile(r"\bquality of life\b", re.I),
+        re.compile(r"\bQoL\b", re.I),
+    ),
+    "functional_impairment": (
+        re.compile(r"\bfunctional impairment\b", re.I),
+        re.compile(r"\bfunctioning\b", re.I),
+        re.compile(r"\bwork impairment\b", re.I),
+    ),
+    "adverse_effects": (
+        re.compile(r"\badverse (?:effect|effects|event|events)\b", re.I),
+        re.compile(r"\bside effects?\b", re.I),
+        re.compile(r"\btolerability\b", re.I),
+    ),
+}
+
+_COMORBIDITY_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "major_depressive_disorder": (
+        re.compile(r"\bmajor depressive disorder\b", re.I),
+        re.compile(r"\bMDD\b", re.I),
+        re.compile(r"\bcomorbid depression\b", re.I),
+        re.compile(r"\bdepressive symptoms\b", re.I),
+    ),
+    "substance_use_disorder": (
+        re.compile(r"\bsubstance use disorder\b", re.I),
+        re.compile(r"\balcohol use disorder\b", re.I),
+    ),
+    "insomnia": (
+        re.compile(r"\binsomnia\b", re.I),
+    ),
+    "post_traumatic_stress_disorder": (
+        re.compile(r"\bpost[- ]traumatic stress disorder\b", re.I),
+        re.compile(r"\bPTSD\b", re.I),
+    ),
+    "obsessive_compulsive_disorder": (
+        re.compile(r"\bobsessive[- ]compulsive disorder\b", re.I),
+        re.compile(r"\bOCD\b", re.I),
+    ),
+}
+
 _POPULATION_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "children_and_adolescents": (
         re.compile(r"\bchildren?\b", re.I),
@@ -115,6 +174,14 @@ def extract_subtype_concepts(text: str) -> set[str]:
 
 def extract_treatment_concepts(text: str) -> set[str]:
     return _extract(text, _TREATMENT_PATTERNS)
+
+
+def extract_outcome_concepts(text: str) -> set[str]:
+    return _extract(text, _OUTCOME_PATTERNS)
+
+
+def extract_comorbidity_concepts(text: str) -> set[str]:
+    return _extract(text, _COMORBIDITY_PATTERNS)
 
 
 def extract_population_concepts(text: str) -> set[str]:

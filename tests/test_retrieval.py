@@ -653,3 +653,38 @@ def test_lexical_only_timing_marks_embedding_as_skipped(runtime, monkeypatch) ->
     assert result.timings_ms["embedding"] == 0.0
     assert result.timings_ms["dense_search"] == 0.0
     assert result.timings_ms["lexical_search"] >= 0.0
+
+
+
+def test_query_analyzer_extracts_outcomes_and_comorbidities() -> None:
+    analysis = QueryAnalyzer().analyze(
+        "For adults with GAD and major depressive disorder, "
+        "what evidence supports CBT for remission and quality of life?"
+    )
+
+    assert analysis.comorbidities == [
+        "major_depressive_disorder"
+    ]
+    assert set(analysis.outcomes) == {
+        "remission",
+        "quality_of_life",
+    }
+
+
+def test_query_analyzer_extracts_adverse_effect_outcome_for_medication() -> None:
+    analysis = QueryAnalyzer().analyze(
+        "What are the side effects of SSRIs for panic disorder?"
+    )
+
+    assert analysis.intent.value == "medication"
+    assert analysis.treatments == ["ssri"]
+    assert analysis.outcomes == ["adverse_effects"]
+
+
+def test_query_analyzer_does_not_invent_outcome_or_comorbidity() -> None:
+    analysis = QueryAnalyzer().analyze(
+        "What evidence supports CBT for GAD?"
+    )
+
+    assert analysis.outcomes == []
+    assert analysis.comorbidities == []
