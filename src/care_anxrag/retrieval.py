@@ -72,11 +72,22 @@ class CareRetriever:
                 knowledge_base_last_sync_at=self.database.last_successful_sync_at(),
             )
 
-        if self.database.count_chunks(status=None) > 0:
-            self.database.assert_embedding_identity(self.embedder.model_id)
-        query_embedding = self.embedder.embed([analysis.retrieval_query])[0]
-        dense_ranked = self._dense_search(query_embedding, analysis.preferred_layers)
-        lexical_ranked = self._lexical_search(analysis.retrieval_query)
+        mode = self.settings.retrieval_mode
+        dense_ranked: list[_RankedId] = []
+        lexical_ranked: list[_RankedId] = []
+
+        if mode != "lexical_only":
+            if self.database.count_chunks(status=None) > 0:
+                self.database.assert_embedding_identity(self.embedder.model_id)
+            query_embedding = self.embedder.embed([analysis.retrieval_query])[0]
+            dense_ranked = self._dense_search(
+                query_embedding,
+                analysis.preferred_layers,
+            )
+
+        if mode != "dense_only":
+            lexical_ranked = self._lexical_search(analysis.retrieval_query)
+
         hits = self._fuse(dense_ranked, lexical_ranked)
         if not hits:
             return RetrievalResult(
@@ -88,73 +99,159 @@ class CareRetriever:
                 knowledge_base_last_sync_at=self.database.last_successful_sync_at(),
             )
 
-        rerank_subset = hits[: self.settings.rerank_candidates]
-        rerank_scores = self.reranker.score(analysis.original_query, rerank_subset)
-        for hit, score in zip(rerank_subset, rerank_scores, strict=True):
-            hit.rerank_score = clamp(score)
+        uses_reranker = mode in {
+            "hybrid_rerank",
+            "care",
+            "care_conflict",
+            "full",
+        }
+        if uses_reranker:
+            rerank_subset = hits[: self.settings.rerank_candidates]
+            rerank_scores = self.reranker.score(
+                analysis.original_query,
+                rerank_subset,
+            )
+            for hit, score in zip(
+                rerank_subset,
+                rerank_scores,
+                strict=True,
+            ):
+                hit.rerank_score = clamp(score)
 
-        max_rrf = max((hit.rrf_score for hit in hits), default=1.0)
+        max_rrf = max(
+            (hit.rrf_score for hit in hits),
+            default=1.0,
+        )
         for hit in hits:
-            hit.rrf_normalized = clamp(hit.rrf_score / max_rrf if max_rrf else 0.0)
-            hit.freshness_score = calculate_freshness(
-                hit.chunk.layer,
-                hit.chunk.updated_at,
-                hit.chunk.published_at,
-                self.settings.clinical_half_life_days,
-                self.settings.research_half_life_days,
+            hit.rrf_normalized = clamp(
+                hit.rrf_score / max_rrf if max_rrf else 0.0
             )
-            hit.applicability_score = applicability_score(
-                hit.chunk.topics,
-                analysis,
-                hit.chunk.layer,
-            )
-            hit.relevance_score = self._relevance_score(hit)
-            hit.care_score = self._care_score(
-            hit,
-            analysis,
-        )
-        hits.sort(key=lambda value: value.care_score, reverse=True)
+            if mode in {"care", "care_conflict", "full"}:
+                hit.freshness_score = calculate_freshness(
+                    hit.chunk.layer,
+                    hit.chunk.updated_at,
+                    hit.chunk.published_at,
+                    self.settings.clinical_half_life_days,
+                    self.settings.research_half_life_days,
+                )
+                hit.applicability_score = applicability_score(
+                    hit.chunk.topics,
+                    analysis,
+                    hit.chunk.layer,
+                )
+                hit.relevance_score = self._relevance_score(hit)
+                hit.care_score = self._care_score(
+                    hit,
+                    analysis,
+                )
+            elif mode == "hybrid_rerank":
+                hit.relevance_score = hit.rerank_score
+                hit.care_score = hit.rerank_score
+            elif mode == "hybrid_rrf":
+                hit.relevance_score = hit.rrf_normalized
+                hit.care_score = hit.rrf_normalized
+            elif mode == "dense_only":
+                hit.relevance_score = hit.dense_score
+                hit.care_score = hit.dense_score
+            elif mode == "lexical_only":
+                hit.relevance_score = hit.lexical_score
+                hit.care_score = hit.lexical_score
 
-        # Source authority and evidence quality must never make an unrelated chunk
-        # answerable. Conflict analysis and final context operate only on candidates
-        # that pass an independent query-evidence relevance gate.
-        relevant_hits = [
-            hit for hit in hits
-            if hit.relevance_score >= self.settings.minimum_relevance_score
-        ]
-        relation_candidates = self._diversify(
-            relevant_hits, limit=min(6, len(relevant_hits)), max_per_document=1
-        )
-        pairs = [
-            (left, right)
-            for left, right in itertools.combinations(relation_candidates, 2)
-            if left.chunk.document_id != right.chunk.document_id
-        ]
-        relations = self.nli.classify(pairs)
-        conflict_score, unresolved_conflict = self._resolve_conflicts(hits, relations)
+        if mode == "dense_only":
+            hits.sort(key=lambda value: value.dense_score, reverse=True)
+        elif mode == "lexical_only":
+            hits.sort(key=lambda value: value.lexical_score, reverse=True)
+        elif mode == "hybrid_rrf":
+            hits.sort(key=lambda value: value.rrf_score, reverse=True)
+        elif mode == "hybrid_rerank":
+            hits.sort(key=lambda value: value.rerank_score, reverse=True)
+        else:
+            hits.sort(key=lambda value: value.care_score, reverse=True)
+
+        if mode == "full":
+            relevant_hits = [
+                hit
+                for hit in hits
+                if hit.relevance_score >= self.settings.minimum_relevance_score
+            ]
+        else:
+            relevant_hits = list(hits)
+
+        relations: list[EvidenceRelation] = []
+        conflict_score = 0.0
+        unresolved_conflict = 0.0
+        if mode in {"care_conflict", "full"}:
+            relation_candidates = self._diversify(
+                relevant_hits,
+                limit=min(6, len(relevant_hits)),
+                max_per_document=1,
+            )
+            pairs = [
+                (left, right)
+                for left, right in itertools.combinations(
+                    relation_candidates,
+                    2,
+                )
+                if left.chunk.document_id != right.chunk.document_id
+            ]
+            relations = self.nli.classify(pairs)
+            conflict_score, unresolved_conflict = self._resolve_conflicts(
+                hits,
+                relations,
+            )
 
         selected = self._diversify(
-            [hit for hit in relevant_hits if not hit.excluded_due_to_conflict],
+            [
+                hit
+                for hit in relevant_hits
+                if not hit.excluded_due_to_conflict
+            ],
             limit=self.settings.final_context_chunks,
             max_per_document=2,
         )
-        selected_ids = {hit.chunk.chunk_id for hit in selected}
-        ordered_hits = selected + [hit for hit in hits if hit.chunk.chunk_id not in selected_ids]
-        ordered_hits = ordered_hits[: max(self.settings.final_context_chunks, 12)]
+        selected_ids = {
+            hit.chunk.chunk_id
+            for hit in selected
+        }
+        ordered_hits = selected + [
+            hit
+            for hit in hits
+            if hit.chunk.chunk_id not in selected_ids
+        ]
+        ordered_hits = ordered_hits[
+            : max(self.settings.final_context_chunks, 12)
+        ]
 
-        confidence = self._confidence(selected, conflict_score)
-        should_abstain, reason = self._abstention(
-            selected,
-            confidence,
-            unresolved_conflict,
-            analysis,
-        )
+        if mode == "full":
+            confidence = self._confidence(
+                selected,
+                conflict_score,
+            )
+            should_abstain, reason = self._abstention(
+                selected,
+                confidence,
+                unresolved_conflict,
+                analysis,
+            )
+        else:
+            confidence = selected[0].care_score if selected else 0.0
+            should_abstain = not selected
+            reason = (
+                "no_active_evidence_after_conflict_resolution"
+                if should_abstain
+                else None
+            )
+
         evidence_dates = [
             hit.chunk.updated_at or hit.chunk.published_at
             for hit in selected
             if hit.chunk.updated_at or hit.chunk.published_at
         ]
-        latest_evidence = max(evidence_dates) if evidence_dates else None
+        latest_evidence = (
+            max(evidence_dates)
+            if evidence_dates
+            else None
+        )
         return RetrievalResult(
             query_analysis=analysis,
             hits=ordered_hits,

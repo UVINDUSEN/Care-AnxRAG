@@ -18,6 +18,27 @@ CARE-AnxRAG does not use free-form medical answer generation. Baselines therefor
 
 Keep corpus snapshot, chunking, extractive rendering, and evaluation questions constant across baselines.
 
+
+Run the full ablation matrix with:
+
+```bash
+care-anxrag evaluate-ablation data/benchmark/your_benchmark.jsonl --project-root .
+```
+
+The command executes the same benchmark against:
+
+```text
+B0_dense_only
+B1_lexical_only
+B2_hybrid_rrf
+B3_hybrid_rerank
+B4_care
+B5_care_conflict
+CARE_full
+```
+
+The retriever restores the original runtime mode after the experiment so an evaluation run does not silently change later requests.
+
 ## Benchmark strata
 
 - generalized anxiety disorder;
