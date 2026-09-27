@@ -8,6 +8,7 @@ from typing import Any
 
 from .coverage import audit_corpus_coverage
 from .evaluation import BenchmarkItem, evaluate_ablation, load_benchmark
+from .experiment_preflight import validate_final_experiment
 from .reproducibility import build_experiment_snapshot
 from .runtime import Runtime
 from .statistics import mcnemar_exact, paired_bootstrap_difference
@@ -276,4 +277,49 @@ def run_experiment_bundle(
     return {
         "output_dir": str(output_dir),
         "manifest": manifest,
+    }
+
+
+
+def run_final_experiment_bundle(
+    runtime: Runtime,
+    benchmark_path: Path,
+    output_dir: Path,
+    *,
+    code_revision: str,
+    corpus_freeze_path: Path,
+) -> dict[str, Any]:
+    """Run the locked final bundle only when freeze and adjudication gates pass."""
+    preflight = validate_final_experiment(
+        runtime,
+        corpus_freeze_path=corpus_freeze_path,
+        benchmark_path=benchmark_path,
+        code_revision=code_revision,
+    )
+    result = run_experiment_bundle(
+        runtime,
+        benchmark_path,
+        output_dir,
+        code_revision=code_revision,
+    )
+
+    output_dir = output_dir.resolve()
+    preflight_path = output_dir / "preflight.json"
+    _write_json(preflight_path, preflight)
+
+    manifest_path = output_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["final_experiment"] = True
+    manifest["corpus_freeze_path"] = str(Path(corpus_freeze_path).resolve())
+    manifest["corpus_freeze_sha256"] = _sha256_file(Path(corpus_freeze_path))
+    manifest["artifacts"]["preflight.json"] = {
+        "sha256": _sha256_file(preflight_path),
+        "size_bytes": preflight_path.stat().st_size,
+    }
+    _write_json(manifest_path, manifest)
+
+    return {
+        "output_dir": str(output_dir),
+        "manifest": manifest,
+        "preflight": preflight,
     }

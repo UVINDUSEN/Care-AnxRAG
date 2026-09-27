@@ -18,7 +18,7 @@ from .corpus_freeze import build_corpus_freeze
 from .evaluation import evaluate as run_evaluation
 from .evaluation import evaluate_ablation as run_ablation
 from .evaluation import load_benchmark
-from .experiment_bundle import run_experiment_bundle
+from .experiment_bundle import run_experiment_bundle, run_final_experiment_bundle
 from .logging_utils import configure_logging
 from .reproducibility import build_experiment_snapshot
 from .runtime import build_runtime
@@ -299,6 +299,33 @@ def freeze_corpus_command(
     typer.echo(_json({"output": str(output), "ready_to_freeze": report["ready_to_freeze"]}))
     if not report["ready_to_freeze"]:
         raise typer.Exit(code=1)
+
+
+
+@app.command("experiment-final")
+def experiment_final_command(
+    benchmark: Annotated[Path, typer.Argument(help="Adjudicated benchmark JSONL file")],
+    output_dir: Annotated[Path, typer.Argument(help="Immutable final experiment directory")],
+    corpus_freeze: Annotated[
+        Path,
+        typer.Option(help="Successful corpus freeze JSON produced by freeze-corpus"),
+    ],
+    code_revision: Annotated[
+        str,
+        typer.Option(help="Exact code revision/commit used for the experiment"),
+    ],
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Run B0-B5 + CARE_full only after strict final-experiment preflight."""
+    runtime = _runtime(project_root)
+    result = run_final_experiment_bundle(
+        runtime,
+        benchmark,
+        output_dir,
+        code_revision=code_revision,
+        corpus_freeze_path=corpus_freeze,
+    )
+    typer.echo(_json(result))
 
 
 

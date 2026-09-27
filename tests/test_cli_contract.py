@@ -28,6 +28,7 @@ def test_cli_command_surface_contract() -> None:
         "evaluate",
         "evaluate-ablation",
         "experiment-bundle",
+        "experiment-final",
         "evaluate-safety",
         "snapshot-experiment",
         "selfcheck",
