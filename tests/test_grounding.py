@@ -172,3 +172,40 @@ def test_grounding_rejects_structured_citation_list_mismatch() -> None:
 
     assert not report.supported
     assert report.reason == "citation_list_mismatch"
+
+
+
+def test_grounding_rejects_paraphrase_even_when_nli_says_entailment() -> None:
+    nli = StubNli([(RelationLabel.ENTAILMENT, 0.99)])
+    payload = GeneratedPayload(
+        answer="CBT permanently eliminates panic disorder [S1].",
+        cited_source_ids=["S1"],
+    )
+
+    report = ClaimGroundingVerifier(nli, threshold=0.65).verify(
+        payload,
+        [_hit("1", "CBT can reduce symptoms of panic disorder.")],
+    )
+
+    assert not report.supported
+    assert report.reason == "unsupported_claim_citation"
+
+
+def test_grounding_accepts_exact_source_text_without_nli_call() -> None:
+    class NliMustNotRun:
+        def classify_text_pairs(self, pairs):
+            raise AssertionError("answer-stage NLI must not authorize extractive claims")
+
+    payload = GeneratedPayload(
+        answer="CBT can reduce symptoms of panic disorder [S1].",
+        cited_source_ids=["S1"],
+    )
+
+    report = ClaimGroundingVerifier(NliMustNotRun(), threshold=0.65).verify(
+        payload,
+        [_hit("1", "CBT can reduce symptoms of panic disorder.")],
+    )
+
+    assert report.supported
+    assert report.reason is None
+    assert report.checked_pairs == 1
