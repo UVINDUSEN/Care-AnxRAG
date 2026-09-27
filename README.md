@@ -27,7 +27,7 @@ CARE-AnxRAG is a complete reference implementation for a continuously updated, v
 - Prompt-injection boundaries around retrieved evidence.
 - Crisis/urgent-message routing before retrieval.
 - FastAPI service, minimal browser UI, CLI, review workflow, scheduler, health checks, reconciliation, and evaluation harness.
-- Offline unit, integration-contract, API, lifecycle, safety, conflict, and retrieval tests.
+- Retrieval ablations (B0–B5 + CARE_full), stage-level latency instrumentation, corpus coverage auditing, formal safety-router evaluation, and reproducibility snapshots.\n- Offline unit, integration-contract, API, lifecycle, safety, conflict, retrieval, coverage, reproducibility, and CLI-contract tests.
 
 ## Architecture
 
