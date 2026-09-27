@@ -164,3 +164,24 @@ def test_rag_does_not_return_unverified_generator_uncertainty(settings) -> None:
     assert not result.abstained
     assert "genetics study" not in result.answer
     assert "works permanently" not in result.answer
+
+
+
+def test_rag_reports_end_to_end_timings(settings) -> None:
+    hit = _hit()
+    rag = CareAnxRag(
+        settings,
+        FakeRetriever(_retrieval(hit)),
+        FakeGenerator(),
+        AcceptGrounding(),
+    )
+
+    result = rag.answer("Does CBT help panic disorder?")
+
+    assert {
+        "retrieval",
+        "presentation",
+        "grounding",
+        "total",
+    } <= set(result.timings_ms)
+    assert all(value >= 0.0 for value in result.timings_ms.values())

@@ -617,3 +617,39 @@ def test_settings_reject_unknown_retrieval_mode(project) -> None:
                 "CARE_NLI_PROVIDER": "heuristic",
             },
         )
+
+
+
+def test_retrieval_reports_stage_timings(runtime) -> None:
+    result = runtime.retriever.retrieve("panic disorder treatment")
+
+    expected = {
+        "analysis",
+        "embedding",
+        "dense_search",
+        "lexical_search",
+        "fusion",
+        "reranking",
+        "care_scoring",
+        "nli_conflict",
+        "selection",
+        "total",
+    }
+
+    assert expected <= set(result.timings_ms)
+    assert all(value >= 0.0 for value in result.timings_ms.values())
+
+
+def test_lexical_only_timing_marks_embedding_as_skipped(runtime, monkeypatch) -> None:
+    runtime.settings.retrieval_mode = "lexical_only"
+
+    def fail_embed(texts):
+        raise AssertionError("lexical-only mode must not embed the query")
+
+    monkeypatch.setattr(runtime.retriever.embedder, "embed", fail_embed)
+
+    result = runtime.retriever.retrieve("panic disorder treatment")
+
+    assert result.timings_ms["embedding"] == 0.0
+    assert result.timings_ms["dense_search"] == 0.0
+    assert result.timings_ms["lexical_search"] >= 0.0
