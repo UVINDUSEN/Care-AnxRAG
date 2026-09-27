@@ -13,7 +13,9 @@ def _long_body(sentence: str) -> str:
         + sentence
         + " This evidence summary includes sufficient contextual detail for "
         + "controlled retrieval, versioning, and corpus coverage validation. "
-        + "Clinical interpretation remains the responsibility of qualified reviewers."
+        + "Clinical interpretation remains the responsibility of qualified reviewers. "
+        + "The fixture is deliberately longer than the document-quality minimum so "
+        + "coverage tests exercise clinical concept handling rather than length rejection."
     )
 
 
@@ -31,7 +33,8 @@ def test_corpus_coverage_counts_direct_subtype_treatment_support(
             "Cognitive behavioural therapy was evaluated for generalized anxiety disorder."
         ),
     )
-    runtime.ingestion.sync(source_ids=["test_core"], force=True)
+    summary = runtime.ingestion.sync(source_ids=["test_core"], force=True)
+    assert summary.promoted == 1
 
     report = audit_corpus_coverage(runtime.database)
 
@@ -66,7 +69,8 @@ def test_corpus_coverage_does_not_use_treatment_topic_as_evidence(
             "Metacognitive therapy was evaluated for generalized anxiety disorder."
         ),
     )
-    runtime.ingestion.sync(source_ids=["test_core"], force=True)
+    summary = runtime.ingestion.sync(source_ids=["test_core"], force=True)
+    assert summary.promoted == 1
 
     report = audit_corpus_coverage(runtime.database)
 
