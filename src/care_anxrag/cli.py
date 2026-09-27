@@ -17,6 +17,7 @@ from .evaluation import evaluate as run_evaluation
 from .evaluation import evaluate_ablation as run_ablation
 from .evaluation import load_benchmark
 from .logging_utils import configure_logging
+from .reproducibility import build_experiment_snapshot
 from .runtime import build_runtime
 from .safety import SafetyRouter
 from .safety_evaluation import evaluate_safety as run_safety_evaluation
