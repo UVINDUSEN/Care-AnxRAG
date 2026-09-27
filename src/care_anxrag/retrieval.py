@@ -10,6 +10,7 @@ from typing import Sequence
 from .clinical_match import (
     concept_set_compatibility,
     population_compatibility,
+    supports_explicit_clinical_context,
     supports_explicit_treatment_query,
     treatment_compatibility,
 )
@@ -708,26 +709,65 @@ class CareRetriever:
             return True, "unresolved_high_confidence_evidence_conflict"
 
         requested_treatments = set(getattr(analysis, "treatments", []) or [])
+        requested_subtypes = set(
+            getattr(analysis, "anxiety_subtypes", []) or []
+        )
+        requested_population = getattr(analysis, "population", None)
+        requested_outcomes = set(
+            getattr(analysis, "outcomes", []) or []
+        )
+        requested_comorbidities = set(
+            getattr(analysis, "comorbidities", []) or []
+        )
+
         if requested_treatments:
-            requested_subtypes = set(
-                getattr(analysis, "anxiety_subtypes", []) or []
-            )
-            requested_population = getattr(analysis, "population", None)
             unsupported_treatments = [
                 treatment
                 for treatment in requested_treatments
                 if not any(
-                    supports_explicit_treatment_query(
+                    supports_explicit_clinical_context(
                         requested_subtypes,
                         {treatment},
                         requested_population,
+                        requested_outcomes,
+                        requested_comorbidities,
                         hit.chunk.topics,
                         self._clinical_text(hit),
+                        (
+                            getattr(hit.chunk, "metadata", {}) or {}
+                        ).get("clinical_facets", {}),
                     )
                     for hit in hits
                 )
             ]
             if unsupported_treatments:
-                return True, "insufficient_direct_evidence_for_requested_treatment"
+                reason = (
+                    "insufficient_direct_evidence_for_requested_clinical_context"
+                    if requested_outcomes or requested_comorbidities
+                    else "insufficient_direct_evidence_for_requested_treatment"
+                )
+                return True, reason
+
+        elif requested_outcomes or requested_comorbidities:
+            has_joint_context = any(
+                supports_explicit_clinical_context(
+                    requested_subtypes,
+                    set(),
+                    requested_population,
+                    requested_outcomes,
+                    requested_comorbidities,
+                    hit.chunk.topics,
+                    self._clinical_text(hit),
+                    (
+                        getattr(hit.chunk, "metadata", {}) or {}
+                    ).get("clinical_facets", {}),
+                )
+                for hit in hits
+            )
+            if not has_joint_context:
+                return (
+                    True,
+                    "insufficient_direct_evidence_for_requested_clinical_context",
+                )
 
         return False, None

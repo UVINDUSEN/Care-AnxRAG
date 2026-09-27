@@ -325,6 +325,77 @@ def population_compatibility(
     return 0.90
 
 
+def supports_explicit_clinical_context(
+    requested_subtypes: Iterable[str],
+    requested_treatments: Iterable[str],
+    requested_population: str | None,
+    requested_outcomes: Iterable[str],
+    requested_comorbidities: Iterable[str],
+    topics: Iterable[str],
+    evidence_text: str,
+    evidence_facets: dict[str, object] | None = None,
+) -> bool:
+    """Require one evidence item to support the explicitly requested clinical context."""
+    requested_treatments_set = set(requested_treatments)
+    if requested_treatments_set:
+        evidence_treatments = extract_treatment_concepts(evidence_text)
+        if not requested_treatments_set.issubset(evidence_treatments):
+            return False
+
+    requested_subtypes_set = set(requested_subtypes)
+    if requested_subtypes_set:
+        normalized_topics = {
+            str(topic).strip().lower().replace(" ", "_")
+            for topic in topics
+        }
+        evidence_subtypes = extract_subtype_concepts(evidence_text) | (
+            normalized_topics & set(_SUBTYPE_PATTERNS)
+        )
+        if not requested_subtypes_set.issubset(evidence_subtypes):
+            return False
+
+    if requested_population:
+        evidence_populations = extract_population_concepts(evidence_text)
+        if evidence_populations and requested_population not in evidence_populations:
+            return False
+
+    facets = evidence_facets if isinstance(evidence_facets, dict) else {}
+
+    requested_outcomes_set = set(requested_outcomes)
+    if requested_outcomes_set:
+        facet_outcomes = facets.get("outcomes", [])
+        evidence_outcomes = (
+            {
+                str(value)
+                for value in facet_outcomes
+                if str(value).strip()
+            }
+            if isinstance(facet_outcomes, list)
+            else set()
+        )
+        evidence_outcomes |= extract_outcome_concepts(evidence_text)
+        if not requested_outcomes_set.issubset(evidence_outcomes):
+            return False
+
+    requested_comorbidities_set = set(requested_comorbidities)
+    if requested_comorbidities_set:
+        facet_comorbidities = facets.get("comorbidities", [])
+        evidence_comorbidities = (
+            {
+                str(value)
+                for value in facet_comorbidities
+                if str(value).strip()
+            }
+            if isinstance(facet_comorbidities, list)
+            else set()
+        )
+        evidence_comorbidities |= extract_comorbidity_concepts(evidence_text)
+        if not requested_comorbidities_set.issubset(evidence_comorbidities):
+            return False
+
+    return True
+
+
 def supports_explicit_treatment_query(
     requested_subtypes: Iterable[str],
     requested_treatments: Iterable[str],
