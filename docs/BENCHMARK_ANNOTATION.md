@@ -64,6 +64,8 @@ The evaluator reports:
 - extractive faithfulness;
 - gold-evidence coverage;
 - prohibited-evidence intrusion rate;
+- active-version accuracy;
+- stale/superseded evidence intrusion rate;
 - per-stratum counts and summary metrics.
 
 `extractive_faithfulness` checks that non-abstained medical answer lines are drawn from returned citation excerpts rather than newly written medical prose.
@@ -76,3 +78,12 @@ The automated metrics do not replace expert clinical evaluation.
 When `gold_evidence_excerpts` is populated, the evaluator measures the fraction of adjudicated exact evidence excerpts that appear in the returned extractive answer. These excerpts must be copied exactly from the frozen source snapshot; do not write paraphrased gold answers.
 
 The evaluator checks extractive fidelity against the full retrieved source chunk, not the shortened citation preview shown to users.
+
+
+## Version-safety metrics
+
+For each query with retrieved evidence, the evaluator reports:
+- `active_version_accuracy`: fraction of evaluated top-5 hits whose document status is `active`;
+- `stale_evidence_intrusion_rate`: fraction of evaluated top-5 hits marked `superseded` or `withdrawn`.
+
+These metrics are observational. They do not relabel evidence and do not substitute for the ingestion/version-governance controls.
