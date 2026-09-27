@@ -532,3 +532,84 @@ def test_evaluation_reports_stale_evidence_intrusion_rate() -> None:
     assert report.stale_evidence_evaluable_count == 1
     assert report.stale_evidence_intrusion_rate == 0.5
     assert report.per_item[0]["stale_evidence_intrusion_rate"] == 0.5
+
+
+
+def test_locked_test_split_requires_adjudication_and_two_annotators() -> None:
+    import pytest
+
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[],
+                confidence=0.0,
+                should_abstain=True,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            return AnswerResponse(
+                answer="The knowledge base does not contain sufficient evidence.",
+                confidence=0.0,
+                conflict_score=0.0,
+                abstained=True,
+                abstention_reason="insufficient_evidence",
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    with pytest.raises(ValueError, match="locked test item"):
+        evaluate(
+            Retriever(),
+            Rag(),
+            [
+                BenchmarkItem(
+                    id="unreviewed-test-item",
+                    question="out of domain",
+                    split="test",
+                    must_abstain=True,
+                    annotator_ids=["reviewer-a"],
+                    adjudicated=False,
+                )
+            ],
+        )
+
+
+def test_locked_test_split_accepts_two_annotators_after_adjudication() -> None:
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[],
+                confidence=0.0,
+                should_abstain=True,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            return AnswerResponse(
+                answer="The knowledge base does not contain sufficient evidence.",
+                confidence=0.0,
+                conflict_score=0.0,
+                abstained=True,
+                abstention_reason="insufficient_evidence",
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    report = evaluate(
+        Retriever(),
+        Rag(),
+        [
+            BenchmarkItem(
+                id="reviewed-test-item",
+                question="out of domain",
+                split="test",
+                must_abstain=True,
+                annotator_ids=["reviewer-a", "reviewer-b"],
+                adjudicated=True,
+            )
+        ],
+    )
+
+    assert report.count == 1
+    assert report.abstention_accuracy == 1.0
