@@ -16,6 +16,7 @@ def test_cli_command_surface_contract() -> None:
         "retrieve",
         "stats",
         "coverage",
+        "freeze-corpus",
         "sources",
         "staging",
         "approve",
