@@ -16,6 +16,7 @@ from .coverage import audit_corpus_coverage
 from .evaluation import evaluate as run_evaluation
 from .evaluation import evaluate_ablation as run_ablation
 from .evaluation import load_benchmark
+from .experiment_bundle import run_experiment_bundle
 from .logging_utils import configure_logging
 from .reproducibility import build_experiment_snapshot
 from .runtime import build_runtime
@@ -248,6 +249,27 @@ def evaluate_ablation_command(
             }
         )
     )
+
+
+@app.command("experiment-bundle")
+def experiment_bundle_command(
+    benchmark: Annotated[Path, typer.Argument(help="Benchmark JSONL file")],
+    output_dir: Annotated[Path, typer.Argument(help="Immutable experiment output directory")],
+    code_revision: Annotated[
+        str,
+        typer.Option(help="Exact code revision/commit used for the experiment"),
+    ],
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Run ablation, coverage, timings, and reproducibility capture together."""
+    runtime = _runtime(project_root)
+    result = run_experiment_bundle(
+        runtime,
+        benchmark,
+        output_dir,
+        code_revision=code_revision,
+    )
+    typer.echo(_json(result))
 
 
 @app.command("evaluate-safety")
