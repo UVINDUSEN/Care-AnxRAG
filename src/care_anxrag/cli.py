@@ -12,6 +12,7 @@ import typer
 import uvicorn
 
 from .config import Settings
+from .coverage import audit_corpus_coverage
 from .evaluation import evaluate as run_evaluation
 from .evaluation import load_benchmark
 from .logging_utils import configure_logging
@@ -107,6 +108,28 @@ def retrieve(
 def stats(project_root: Annotated[Path | None, typer.Option()] = None) -> None:
     runtime = _runtime(project_root)
     typer.echo(_json(runtime.database.stats()))
+
+
+@app.command("coverage")
+def coverage(
+    subtype: Annotated[
+        str | None,
+        typer.Option(help="Optional normalized anxiety subtype to inspect"),
+    ] = None,
+    treatment: Annotated[
+        str | None,
+        typer.Option(help="Optional normalized treatment to inspect"),
+    ] = None,
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Audit direct clinical coverage in active evidence chunks."""
+    runtime = _runtime(project_root)
+    report = audit_corpus_coverage(
+        runtime.database,
+        subtype=subtype,
+        treatment=treatment,
+    )
+    typer.echo(_json(report.as_dict()))
 
 
 @app.command()
