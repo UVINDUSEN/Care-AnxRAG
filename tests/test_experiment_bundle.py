@@ -57,6 +57,8 @@ def test_experiment_bundle_writes_required_artifacts(runtime, project) -> None:
 
     expected = {
         "ablation.json",
+        "comparisons.json",
+        "comparisons.csv",
         "coverage.json",
         "timings.json",
         "snapshot.json",
@@ -74,6 +76,11 @@ def test_experiment_bundle_writes_required_artifacts(runtime, project) -> None:
         "B5_care_conflict",
         "CARE_full",
     ]
+
+    comparisons = json.loads((output / "comparisons.json").read_text(encoding="utf-8"))
+    assert comparisons["reference"] == "CARE_full"
+    assert "B0_dense_only" in comparisons["comparisons"]
+    assert (output / "comparisons.csv").read_text(encoding="utf-8").startswith("baseline,reference,analysis,metric")
 
     timings = json.loads((output / "timings.json").read_text(encoding="utf-8"))
     assert timings["count"] == 1
