@@ -11,6 +11,7 @@ from typing import Annotated
 import typer
 import uvicorn
 
+from .benchmark_review import compile_adjudicated_benchmark, write_annotation_sheet
 from .config import Settings
 from .coverage import audit_corpus_coverage
 from .corpus_freeze import build_corpus_freeze
@@ -373,6 +374,29 @@ def snapshot_experiment_command(
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(_json(snapshot) + "\n", encoding="utf-8")
     typer.echo(_json({"output": str(output.resolve())}))
+
+
+
+@app.command("benchmark-scaffold")
+def benchmark_scaffold_command(
+    output: Annotated[Path, typer.Argument(help="Reviewer CSV output path")],
+    split: Annotated[str, typer.Option(help="development or test")] = "development",
+) -> None:
+    """Create an unlabeled benchmark review sheet; no clinical gold is fabricated."""
+    written = write_annotation_sheet(output, split=split)
+    typer.echo(_json({"output": str(written), "split": split}))
+
+
+@app.command("benchmark-compile")
+def benchmark_compile_command(
+    review_sheet: Annotated[Path, typer.Argument(help="Completed reviewer CSV")],
+    output: Annotated[Path, typer.Argument(help="Adjudicated benchmark JSONL output")],
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Compile a reviewed sheet only after strict human/corpus validation."""
+    runtime = _runtime(project_root)
+    items = compile_adjudicated_benchmark(runtime, review_sheet, output)
+    typer.echo(_json({"output": str(output), "count": len(items)}))
 
 
 
