@@ -150,3 +150,62 @@ def test_corpus_coverage_can_filter_requested_combination(
     assert report.requested_subtype == "generalized_anxiety_disorder"
     assert report.requested_treatment == "cognitive_behavioral_therapy"
     assert report.requested_supporting_chunks == 0
+
+
+
+def test_coverage_cli_reports_requested_direct_support(
+    runtime,
+    project: Path,
+) -> None:
+    import json
+
+    from typer.testing import CliRunner
+
+    from care_anxrag.cli import app
+
+    write_document(
+        project,
+        "gad-cbt-cli.md",
+        external_id="gad-cbt-cli",
+        title="CBT evidence for generalized anxiety disorder",
+        topics=["anxiety", "generalized_anxiety_disorder"],
+        body=_long_body(
+            "Cognitive behavioural therapy was evaluated for generalized anxiety disorder."
+        ),
+    )
+    summary = runtime.ingestion.sync(source_ids=["test_core"], force=True)
+    assert summary.promoted == 1
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "coverage",
+            "--project-root",
+            str(project),
+            "--subtype",
+            "generalized_anxiety_disorder",
+            "--treatment",
+            "cognitive_behavioral_therapy",
+        ],
+        env={
+            "CARE_HOME": str(runtime.settings.care_home),
+            "CARE_DATABASE_PATH": str(runtime.settings.database_path),
+            "CARE_VECTOR_PATH": str(runtime.settings.vector_path),
+            "CARE_SOURCE_REGISTRY": str(runtime.settings.source_registry_path),
+            "CARE_VECTOR_BACKEND": "sqlite",
+            "CARE_EMBEDDING_PROVIDER": "hash",
+            "CARE_EMBEDDING_MODEL": "hash",
+            "CARE_EMBEDDING_DIMENSIONS": "256",
+            "CARE_GENERATOR_PROVIDER": "extractive",
+            "CARE_RERANKER_PROVIDER": "heuristic",
+            "CARE_NLI_PROVIDER": "heuristic",
+            "CARE_ALLOW_NETWORK_SYNC": "false",
+        },
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["requested_subtype"] == "generalized_anxiety_disorder"
+    assert payload["requested_treatment"] == "cognitive_behavioral_therapy"
+    assert payload["requested_supporting_chunks"] >= 1
