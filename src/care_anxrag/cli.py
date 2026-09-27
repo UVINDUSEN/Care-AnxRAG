@@ -13,6 +13,7 @@ import uvicorn
 
 from .config import Settings
 from .coverage import audit_corpus_coverage
+from .corpus_freeze import build_corpus_freeze
 from .evaluation import evaluate as run_evaluation
 from .evaluation import evaluate_ablation as run_ablation
 from .evaluation import load_benchmark
@@ -270,6 +271,34 @@ def experiment_bundle_command(
         code_revision=code_revision,
     )
     typer.echo(_json(result))
+
+
+@app.command("freeze-corpus")
+def freeze_corpus_command(
+    output: Annotated[Path, typer.Argument(help="Output corpus freeze JSON path")],
+    code_revision: Annotated[
+        str,
+        typer.Option(help="Exact code revision/commit used for the freeze"),
+    ],
+    benchmark: Annotated[
+        Path | None,
+        typer.Option(help="Optional benchmark scaffold to fingerprint"),
+    ] = None,
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Audit, reconcile, and fingerprint the current corpus for research use."""
+    runtime = _runtime(project_root)
+    report = build_corpus_freeze(
+        runtime,
+        code_revision=code_revision,
+        benchmark_path=benchmark,
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(_json(report) + "\n", encoding="utf-8")
+    typer.echo(_json({"output": str(output), "ready_to_freeze": report["ready_to_freeze"]}))
+    if not report["ready_to_freeze"]:
+        raise typer.Exit(code=1)
+
 
 
 @app.command("evaluate-safety")
