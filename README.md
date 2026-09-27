@@ -23,7 +23,7 @@ CARE-AnxRAG is a complete reference implementation for a continuously updated, v
 - Evidence-strength-aware contradiction handling using NLI.
 - Calibrated abstention for irrelevance, weak evidence, insufficient diversity, and unresolved conflict.
 - Clinical Core and Research Frontier knowledge layers.
-- Extractive evidence-only answer rendering: returned medical statements are selected verbatim from retrieved evidence and cited; free-form medical answer generation is disabled.
+- Extractive evidence-only answer rendering: returned medical statements are selected verbatim from retrieved evidence and cited; free-form medical answer generation is disabled.\n- Answer-stage grounding is deterministic: each returned medical claim must be an exact normalized substring of every cited source chunk; NLI is reserved for evidence-vs-evidence contradiction analysis.
 - Prompt-injection boundaries around retrieved evidence.
 - Crisis/urgent-message routing before retrieval.
 - FastAPI service, minimal browser UI, CLI, review workflow, scheduler, health checks, reconciliation, and evaluation harness.
@@ -72,7 +72,7 @@ Official/public/licensed/local sources
                 v
  deterministic structure + citations
                 v
-   claim/citation entailment check
+ exact-source citation verification
 ```
 
 The SQLite ledger is the source of truth. Vector results are always joined back to active SQLite chunks, so a stale vector cannot make superseded evidence answerable. The vector outbox and `reconcile` command provide eventual consistency and physical cleanup.
