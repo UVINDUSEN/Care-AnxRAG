@@ -103,11 +103,11 @@ Automated LLM graders may supplement but must not replace human evaluation for t
 
 ## Calibration
 
-Split data into development and locked test sets. Tune CARE weights, relevance threshold, confidence threshold, contradiction threshold, dominance margin, and source-diversity requirement only on development data. Freeze all values before final testing.
+Split data into development and locked test sets. The committed CARE weights are treated as prespecified engineering priors unless a separate weight-tuning experiment is explicitly documented. Tune configurable thresholds (including relevance, confidence, contradiction, dominance margin, and source-diversity requirements) only on development data. If CARE weights are deliberately tuned, that tuning must also use development data only and must be reported separately. Freeze all values before final testing.
 
 ## Statistical analysis
 
-- paired bootstrap confidence intervals for retrieval/generation metric differences;
+- paired bootstrap confidence intervals for per-item metric differences, reported as CARE_full minus each baseline;
 - McNemar test for paired binary outcomes such as correct abstention;
 - correction for multiple primary comparisons;
 - subgroup performance and error analysis;
