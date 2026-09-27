@@ -13,6 +13,8 @@ def test_cli_command_surface_contract() -> None:
         "init",
         "sync",
         "ask",
+        "benchmark-scaffold",
+        "benchmark-compile",
         "retrieve",
         "stats",
         "coverage",
