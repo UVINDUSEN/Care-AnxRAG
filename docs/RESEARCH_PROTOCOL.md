@@ -62,6 +62,7 @@ Use at least two qualified annotators for clinical/evidence labels, report agree
 - nDCG@k
 - source/evidence authority precision
 - active-version accuracy
+- stale/superseded evidence intrusion rate
 - poisoned-evidence intrusion rate
 
 ## Answer/evidence-presentation metrics
