@@ -295,6 +295,7 @@ def _first_sentence(
     text: str,
     max_characters: int = 280,
 ) -> str:
+    del max_characters  # retained for compatibility; extractive text is never truncated.
     normalized = normalize_whitespace(text)
 
     match = re.search(
@@ -302,15 +303,7 @@ def _first_sentence(
         normalized,
     )
 
-    sentence = match.group(1) if match else normalized
-
-    if len(sentence) > max_characters:
-        sentence = (
-            sentence[: max_characters - 1].rstrip()
-            + "…"
-        )
-
-    return sentence
+    return match.group(1) if match else normalized
 
 
 def _best_sentence(
@@ -360,12 +353,6 @@ def _best_sentence(
         candidates,
         key=score,
     )
-
-    if len(selected) > max_characters:
-        selected = (
-            selected[: max_characters - 1].rstrip()
-            + "…"
-        )
 
     return selected
 

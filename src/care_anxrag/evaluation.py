@@ -9,6 +9,7 @@ from typing import Any, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .models import DocumentStatus
 from .rag import CareAnxRag
 from .retrieval import CareRetriever
 
@@ -29,6 +30,7 @@ class BenchmarkItem(BaseModel):
     split: str = "unassigned"
     intent: str | None = None
     anxiety_subtypes: list[str] = Field(default_factory=list)
+    treatments: list[str] = Field(default_factory=list)
     population: str | None = None
     gold_evidence_excerpts: list[str] = Field(default_factory=list)
     prohibited_claims: list[str] = Field(default_factory=list)
@@ -49,8 +51,14 @@ class EvaluationReport:
     citation_validity: float
     extractive_evaluable_count: int
     extractive_faithfulness: float
+    gold_evidence_evaluable_count: int
+    gold_evidence_coverage: float
     prohibited_evidence_evaluable_count: int
     prohibited_evidence_intrusion_rate: float
+    active_version_evaluable_count: int
+    active_version_accuracy: float
+    stale_evidence_evaluable_count: int
+    stale_evidence_intrusion_rate: float
     per_stratum: dict[str, dict[str, Any]]
     per_item: list[dict[str, Any]]
 
@@ -67,8 +75,14 @@ class EvaluationReport:
             "citation_validity": self.citation_validity,
             "extractive_evaluable_count": self.extractive_evaluable_count,
             "extractive_faithfulness": self.extractive_faithfulness,
+            "gold_evidence_evaluable_count": self.gold_evidence_evaluable_count,
+            "gold_evidence_coverage": self.gold_evidence_coverage,
             "prohibited_evidence_evaluable_count": self.prohibited_evidence_evaluable_count,
             "prohibited_evidence_intrusion_rate": self.prohibited_evidence_intrusion_rate,
+            "active_version_evaluable_count": self.active_version_evaluable_count,
+            "active_version_accuracy": self.active_version_accuracy,
+            "stale_evidence_evaluable_count": self.stale_evidence_evaluable_count,
+            "stale_evidence_intrusion_rate": self.stale_evidence_intrusion_rate,
             "per_stratum": self.per_stratum,
             "per_item": self.per_item,
         }
@@ -102,6 +116,9 @@ def evaluate(
     rag: CareAnxRag,
     items: Iterable[BenchmarkItem],
 ) -> EvaluationReport:
+    benchmark_items = list(items)
+    _validate_locked_test_items(benchmark_items)
+
     rows: list[dict[str, Any]] = []
     recalls: list[float] = []
     precisions: list[float] = []
@@ -111,10 +128,13 @@ def evaluate(
     conflict_matches: list[float] = []
     citation_checks: list[float] = []
     extractive_checks: list[float] = []
+    gold_evidence_coverages: list[float] = []
     prohibited_intrusions: list[float] = []
+    active_version_accuracies: list[float] = []
+    stale_evidence_intrusions: list[float] = []
     stratum_rows: dict[str, list[dict[str, Any]]] = {}
 
-    for item in items:
+    for item in benchmark_items:
         retrieval = retriever.retrieve(item.question)
         top_hits = [hit for hit in retrieval.hits if not hit.excluded_due_to_conflict][:5]
         relevant_flags = [_is_relevant(hit.chunk.source_id, hit.chunk.metadata, item) for hit in top_hits]
@@ -145,8 +165,16 @@ def evaluate(
 
         extractive_faithful: bool | None = None
         if not answer.abstained:
-            extractive_faithful = _is_extractive_answer(answer)
+            extractive_faithful = _is_extractive_answer(answer, top_hits)
             extractive_checks.append(float(extractive_faithful))
+
+        gold_evidence_coverage: float | None = None
+        if item.gold_evidence_excerpts:
+            gold_evidence_coverage = _gold_evidence_coverage(
+                answer.answer if not answer.abstained else "",
+                item.gold_evidence_excerpts,
+            )
+            gold_evidence_coverages.append(gold_evidence_coverage)
 
         has_prohibited_labels = bool(
             item.prohibited_external_ids or item.prohibited_source_ids
@@ -162,6 +190,30 @@ def evaluate(
                 for hit in top_hits
             )
             prohibited_intrusions.append(float(prohibited_intrusion))
+
+        active_version_accuracy: float | None = None
+        stale_evidence_intrusion_rate: float | None = None
+        if top_hits:
+            active_version_accuracy = (
+                sum(
+                    hit.chunk.status == DocumentStatus.ACTIVE
+                    for hit in top_hits
+                )
+                / len(top_hits)
+            )
+            stale_evidence_intrusion_rate = (
+                sum(
+                    hit.chunk.status
+                    in {
+                        DocumentStatus.SUPERSEDED,
+                        DocumentStatus.WITHDRAWN,
+                    }
+                    for hit in top_hits
+                )
+                / len(top_hits)
+            )
+            active_version_accuracies.append(active_version_accuracy)
+            stale_evidence_intrusions.append(stale_evidence_intrusion_rate)
 
         if has_retrieval_labels:
             if recall is None or precision is None or rr is None or ndcg is None:
@@ -186,7 +238,10 @@ def evaluate(
                 "expected_conflict": item.expects_conflict,
                 "citation_valid": citations_valid,
                 "extractive_faithful": extractive_faithful,
+                "gold_evidence_coverage": gold_evidence_coverage,
                 "prohibited_evidence_intrusion": prohibited_intrusion,
+                "active_version_accuracy": active_version_accuracy,
+                "stale_evidence_intrusion_rate": stale_evidence_intrusion_rate,
                 "stratum": item.stratum,
                 "split": item.split,
                 "retrieved_chunk_ids": [hit.chunk.chunk_id for hit in top_hits],
@@ -227,12 +282,17 @@ def evaluate(
         citation_validity=mean(citation_checks),
         extractive_evaluable_count=len(extractive_checks),
         extractive_faithfulness=mean(extractive_checks),
+        gold_evidence_evaluable_count=len(gold_evidence_coverages),
+        gold_evidence_coverage=mean(gold_evidence_coverages),
         prohibited_evidence_evaluable_count=len(prohibited_intrusions),
         prohibited_evidence_intrusion_rate=mean(prohibited_intrusions),
+        active_version_evaluable_count=len(active_version_accuracies),
+        active_version_accuracy=mean(active_version_accuracies),
+        stale_evidence_evaluable_count=len(stale_evidence_intrusions),
+        stale_evidence_intrusion_rate=mean(stale_evidence_intrusions),
         per_stratum=per_stratum,
         per_item=rows,
     )
-
 
 
 ABLATION_MODES: tuple[tuple[str, str], ...] = (
@@ -266,6 +326,22 @@ def evaluate_ablation(
         retriever.settings.retrieval_mode = original_mode
     return reports
 
+
+def _validate_locked_test_items(items: Iterable[BenchmarkItem]) -> None:
+    for item in items:
+        if item.split.lower() != "test":
+            continue
+        reviewers = {
+            annotator.strip()
+            for annotator in item.annotator_ids
+            if annotator.strip()
+        }
+        if not item.adjudicated or len(reviewers) < 2:
+            raise ValueError(
+                f"Benchmark locked test item {item.id!r} must be adjudicated "
+                "and have at least two distinct annotator IDs"
+            )
+
 def _is_relevant(source_id: str, metadata: dict[str, Any], item: BenchmarkItem) -> bool:
     external_id = str(metadata.get("external_id", ""))
     return source_id in item.relevant_source_ids or external_id in item.relevant_external_ids
@@ -284,18 +360,20 @@ def _is_prohibited(
     )
 
 
-def _is_extractive_answer(answer: Any) -> bool:
+def _is_extractive_answer(
+    answer: Any,
+    top_hits: Iterable[Any],
+) -> bool:
     if answer.abstained:
         return True
     if not answer.citations:
         return False
 
-    excerpts = [
-        " ".join(str(citation.excerpt).split())
-        for citation in answer.citations
-        if citation.excerpt
-    ]
-    if not excerpts:
+    source_text_by_id = {
+        f"S{index}": " ".join(str(hit.chunk.text).split())
+        for index, hit in enumerate(top_hits, start=1)
+    }
+    if not source_text_by_id:
         return False
 
     for raw_line in str(answer.answer).splitlines():
@@ -303,10 +381,33 @@ def _is_extractive_answer(answer: Any) -> bool:
         if not line:
             continue
         line = line.removeprefix("-").strip()
-        line = re.sub(r"\s*\[S\d+\]\s*$", "", line).strip()
-        if not line:
-            continue
-        normalized = " ".join(line.split())
-        if not any(normalized in excerpt for excerpt in excerpts):
+        citation_ids = re.findall(r"\[(S\d+)\]", line)
+        medical_text = re.sub(r"\s*\[S\d+\]\s*$", "", line).strip()
+        if not medical_text or not citation_ids:
+            return False
+        normalized = " ".join(medical_text.split())
+        if not all(
+            citation_id in source_text_by_id
+            and normalized in source_text_by_id[citation_id]
+            for citation_id in citation_ids
+        ):
             return False
     return True
+
+
+def _gold_evidence_coverage(
+    answer_text: str,
+    gold_excerpts: Iterable[str],
+) -> float:
+    gold = [
+        " ".join(str(excerpt).split())
+        for excerpt in gold_excerpts
+        if str(excerpt).strip()
+    ]
+    if not gold:
+        return 0.0
+
+    answer_without_citations = re.sub(r"\[S\d+\]", "", str(answer_text))
+    normalized_answer = " ".join(answer_without_citations.split())
+    matched = sum(excerpt in normalized_answer for excerpt in gold)
+    return matched / len(gold)

@@ -292,7 +292,6 @@ def test_evaluation_detects_non_extractive_answer_text() -> None:
     assert report.per_item[0]["extractive_faithful"] is False
 
 
-
 def test_evaluate_ablation_runs_all_research_modes_and_restores_setting() -> None:
     from types import SimpleNamespace
 
@@ -314,9 +313,6 @@ def test_evaluate_ablation_runs_all_research_modes_and_restores_setting() -> Non
             )
 
     class Rag:
-        def __init__(self, retriever):
-            self.retriever = retriever
-
         def answer(self, question: str) -> AnswerResponse:
             citation = Citation(
                 citation_id="S1",
@@ -340,7 +336,7 @@ def test_evaluate_ablation_runs_all_research_modes_and_restores_setting() -> Non
     retriever = Retriever()
     reports = evaluate_ablation(
         retriever,
-        Rag(retriever),
+        Rag(),
         [
             BenchmarkItem(
                 id="q1",
@@ -369,3 +365,325 @@ def test_evaluate_ablation_runs_all_research_modes_and_restores_setting() -> Non
         "care_conflict",
         "full",
     }
+
+
+def test_benchmark_item_records_expected_treatments() -> None:
+    item = BenchmarkItem(
+        id="gad-cbt-treatment",
+        question="What evidence addresses CBT for GAD?",
+        treatments=["cognitive_behavioral_therapy"],
+    )
+
+    assert item.treatments == ["cognitive_behavioral_therapy"]
+
+
+def test_evaluation_uses_full_retrieved_chunk_for_extractive_fidelity() -> None:
+    later_sentence = "Cognitive behavioural therapy is discussed for panic disorder."
+    long_text = ("Background context. " * 30) + later_sentence
+    chunk = _chunk().model_copy(
+        update={
+            "text": long_text,
+            "text_hash": "long-hash",
+        }
+    )
+    hit = SearchHit(chunk=chunk, care_score=0.9)
+
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[hit],
+                confidence=0.9,
+                should_abstain=False,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            citation = Citation(
+                citation_id="S1",
+                chunk_id=chunk.chunk_id,
+                title=chunk.title,
+                source_name=chunk.source_name,
+                source_id=chunk.source_id,
+                url=chunk.url,
+                evidence_level=chunk.evidence_level,
+                excerpt=long_text[:320],
+            )
+            return AnswerResponse(
+                answer=f"- {later_sentence} [S1]",
+                citations=[citation],
+                confidence=0.9,
+                conflict_score=0.0,
+                abstained=False,
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    report = evaluate(
+        Retriever(),
+        Rag(),
+        [
+            BenchmarkItem(
+                id="later-source-sentence",
+                question="answerable",
+                relevant_external_ids=["gold-doc"],
+            )
+        ],
+    )
+
+    assert report.extractive_faithfulness == 1.0
+
+
+def test_evaluation_reports_gold_evidence_coverage() -> None:
+    chunk = _chunk()
+    hit = SearchHit(chunk=chunk, care_score=0.9)
+
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[hit],
+                confidence=0.9,
+                should_abstain=False,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            citation = Citation(
+                citation_id="S1",
+                chunk_id=chunk.chunk_id,
+                title=chunk.title,
+                source_name=chunk.source_name,
+                source_id=chunk.source_id,
+                url=chunk.url,
+                evidence_level=chunk.evidence_level,
+                excerpt=chunk.text,
+            )
+            return AnswerResponse(
+                answer=f"- {chunk.text} [S1]",
+                citations=[citation],
+                confidence=0.9,
+                conflict_score=0.0,
+                abstained=False,
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    report = evaluate(
+        Retriever(),
+        Rag(),
+        [
+            BenchmarkItem(
+                id="gold-excerpt",
+                question="answerable",
+                relevant_external_ids=["gold-doc"],
+                gold_evidence_excerpts=[chunk.text],
+            )
+        ],
+    )
+
+    assert report.gold_evidence_evaluable_count == 1
+    assert report.gold_evidence_coverage == 1.0
+    assert report.per_item[0]["gold_evidence_coverage"] == 1.0
+
+
+
+def test_evaluation_reports_active_version_accuracy() -> None:
+    active = _chunk()
+    stale = active.model_copy(
+        update={
+            "chunk_id": "chunk-stale",
+            "document_id": "doc-stale",
+            "version_id": "version-stale",
+            "status": DocumentStatus.SUPERSEDED,
+            "metadata": {"external_id": "stale-doc"},
+        }
+    )
+    active_hit = SearchHit(chunk=active, care_score=0.9)
+    stale_hit = SearchHit(chunk=stale, care_score=0.8)
+
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[active_hit, stale_hit],
+                confidence=0.9,
+                should_abstain=False,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            citation = Citation(
+                citation_id="S1",
+                chunk_id=active.chunk_id,
+                title=active.title,
+                source_name=active.source_name,
+                source_id=active.source_id,
+                url=active.url,
+                evidence_level=active.evidence_level,
+                excerpt=active.text,
+            )
+            return AnswerResponse(
+                answer=f"- {active.text} [S1]",
+                citations=[citation],
+                confidence=0.9,
+                conflict_score=0.0,
+                abstained=False,
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    report = evaluate(
+        Retriever(),
+        Rag(),
+        [
+            BenchmarkItem(
+                id="active-version",
+                question="answerable",
+                relevant_external_ids=["gold-doc"],
+            )
+        ],
+    )
+
+    assert report.active_version_evaluable_count == 1
+    assert report.active_version_accuracy == 0.5
+    assert report.per_item[0]["active_version_accuracy"] == 0.5
+
+
+def test_evaluation_reports_stale_evidence_intrusion_rate() -> None:
+    active = _chunk()
+    withdrawn = active.model_copy(
+        update={
+            "chunk_id": "chunk-withdrawn",
+            "document_id": "doc-withdrawn",
+            "version_id": "version-withdrawn",
+            "status": DocumentStatus.WITHDRAWN,
+            "metadata": {"external_id": "withdrawn-doc"},
+        }
+    )
+    active_hit = SearchHit(chunk=active, care_score=0.9)
+    withdrawn_hit = SearchHit(chunk=withdrawn, care_score=0.8)
+
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[active_hit, withdrawn_hit],
+                confidence=0.9,
+                should_abstain=False,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            citation = Citation(
+                citation_id="S1",
+                chunk_id=active.chunk_id,
+                title=active.title,
+                source_name=active.source_name,
+                source_id=active.source_id,
+                url=active.url,
+                evidence_level=active.evidence_level,
+                excerpt=active.text,
+            )
+            return AnswerResponse(
+                answer=f"- {active.text} [S1]",
+                citations=[citation],
+                confidence=0.9,
+                conflict_score=0.0,
+                abstained=False,
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    report = evaluate(
+        Retriever(),
+        Rag(),
+        [
+            BenchmarkItem(
+                id="stale-intrusion",
+                question="answerable",
+                relevant_external_ids=["gold-doc"],
+            )
+        ],
+    )
+
+    assert report.stale_evidence_evaluable_count == 1
+    assert report.stale_evidence_intrusion_rate == 0.5
+    assert report.per_item[0]["stale_evidence_intrusion_rate"] == 0.5
+
+
+
+def test_locked_test_split_requires_adjudication_and_two_annotators() -> None:
+    import pytest
+
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[],
+                confidence=0.0,
+                should_abstain=True,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            return AnswerResponse(
+                answer="The knowledge base does not contain sufficient evidence.",
+                confidence=0.0,
+                conflict_score=0.0,
+                abstained=True,
+                abstention_reason="insufficient_evidence",
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    with pytest.raises(ValueError, match="locked test item"):
+        evaluate(
+            Retriever(),
+            Rag(),
+            [
+                BenchmarkItem(
+                    id="unreviewed-test-item",
+                    question="out of domain",
+                    split="test",
+                    must_abstain=True,
+                    annotator_ids=["reviewer-a"],
+                    adjudicated=False,
+                )
+            ],
+        )
+
+
+def test_locked_test_split_accepts_two_annotators_after_adjudication() -> None:
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[],
+                confidence=0.0,
+                should_abstain=True,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            return AnswerResponse(
+                answer="The knowledge base does not contain sufficient evidence.",
+                confidence=0.0,
+                conflict_score=0.0,
+                abstained=True,
+                abstention_reason="insufficient_evidence",
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    report = evaluate(
+        Retriever(),
+        Rag(),
+        [
+            BenchmarkItem(
+                id="reviewed-test-item",
+                question="out of domain",
+                split="test",
+                must_abstain=True,
+                annotator_ids=["reviewer-a", "reviewer-b"],
+                adjudicated=True,
+            )
+        ],
+    )
+
+    assert report.count == 1
+    assert report.abstention_accuracy == 1.0

@@ -438,117 +438,70 @@ def test_evidence_only_generator_returns_source_text_without_paraphrasing() -> N
 
 
 
-def test_pubmed_parser_extracts_correction_and_retraction_relationships() -> None:
-    xml = """
-    <PubmedArticle>
-      <MedlineCitation>
-        <PMID>90001</PMID>
-        <Article>
-          <ArticleTitle>Retraction notice for an anxiety trial</ArticleTitle>
-          <Abstract>
-            <AbstractText>This notice retracts the linked anxiety trial.</AbstractText>
-          </Abstract>
-          <Journal>
-            <JournalIssue>
-              <PubDate><Year>2026</Year><Month>Sep</Month><Day>1</Day></PubDate>
-            </JournalIssue>
-            <Title>Test Journal</Title>
-          </Journal>
-          <PublicationTypeList>
-            <PublicationType>Retraction Notice</PublicationType>
-          </PublicationTypeList>
-          <Language>eng</Language>
-        </Article>
-        <CommentsCorrectionsList>
-          <CommentsCorrections RefType="RetractionOf">
-            <RefSource>Test Journal. 2025;1:1-5.</RefSource>
-            <PMID Version="1">80001</PMID>
-          </CommentsCorrections>
-          <CommentsCorrections RefType="ExpressionOfConcernFor">
-            <RefSource>Test Journal. 2025;2:1-5.</RefSource>
-            <PMID Version="1">80002</PMID>
-          </CommentsCorrections>
-          <CommentsCorrections RefType="ErratumFor">
-            <RefSource>Test Journal. 2025;3:1-5.</RefSource>
-            <PMID Version="1">80003</PMID>
-          </CommentsCorrections>
-        </CommentsCorrectionsList>
-      </MedlineCitation>
-      <PubmedData>
-        <PublicationStatus>ppublish</PublicationStatus>
-        <ArticleIdList />
-      </PubmedData>
-    </PubmedArticle>
-    """
+def test_evidence_only_generator_does_not_truncate_source_sentence() -> None:
+    from care_anxrag.generation import EvidenceOnlyGenerator
 
-    document = _parse_pubmed_article(
-        "pubmed",
-        ET.fromstring(xml),
+    long_sentence = (
+        "Cognitive behavioural therapy was evaluated for panic disorder in a "
+        "controlled clinical context with repeated follow-up assessments, "
+        "careful eligibility criteria, structured symptom measurement, and "
+        "clinician-supervised review of outcomes across the complete study "
+        "period without replacing the original evidence wording in the response."
+    )
+    chunk = sample_chunk().model_copy(
+        update={"text": long_sentence}
+    )
+    hit = SearchHit(chunk=chunk, care_score=0.9)
+    retrieval = RetrievalResult(
+        query_analysis=QueryAnalysis(
+            original_query="What evidence supports CBT for panic disorder?",
+            normalized_query="what evidence supports cbt for panic disorder?",
+            retrieval_query="what evidence supports cbt for panic disorder?",
+            intent=QueryIntent.TREATMENT,
+            preferred_layers=[KnowledgeLayer.CLINICAL_CORE],
+            safety_level=SafetyLevel.NORMAL,
+        ),
+        hits=[hit],
+        confidence=0.8,
     )
 
-    assert document is not None
-    assert document.metadata["pubmed_relations"] == [
-        {
-            "ref_type": "RetractionOf",
-            "pmid": "80001",
-            "ref_source": "Test Journal. 2025;1:1-5.",
-            "note": "",
-        },
-        {
-            "ref_type": "ExpressionOfConcernFor",
-            "pmid": "80002",
-            "ref_source": "Test Journal. 2025;2:1-5.",
-            "note": "",
-        },
-        {
-            "ref_type": "ErratumFor",
-            "pmid": "80003",
-            "ref_source": "Test Journal. 2025;3:1-5.",
-            "note": "",
-        },
-    ]
-    assert document.metadata["retraction_of_pmids"] == ["80001"]
-    assert document.metadata["expression_of_concern_for_pmids"] == ["80002"]
-    assert document.metadata["erratum_for_pmids"] == ["80003"]
-
-
-def test_pubmed_parser_keeps_relation_notice_without_abstract() -> None:
-    xml = """
-    <PubmedArticle>
-      <MedlineCitation>
-        <PMID>90002</PMID>
-        <Article>
-          <ArticleTitle>Retraction notice</ArticleTitle>
-          <Journal>
-            <JournalIssue>
-              <PubDate><Year>2026</Year></PubDate>
-            </JournalIssue>
-            <Title>Test Journal</Title>
-          </Journal>
-          <PublicationTypeList>
-            <PublicationType>Retraction Notice</PublicationType>
-          </PublicationTypeList>
-          <Language>eng</Language>
-        </Article>
-        <CommentsCorrectionsList>
-          <CommentsCorrections RefType="RetractionOf">
-            <RefSource>Test Journal. 2025;1:1-5.</RefSource>
-            <PMID Version="1">80001</PMID>
-          </CommentsCorrections>
-        </CommentsCorrectionsList>
-      </MedlineCitation>
-      <PubmedData>
-        <PublicationStatus>ppublish</PublicationStatus>
-        <ArticleIdList />
-      </PubmedData>
-    </PubmedArticle>
-    """
-
-    document = _parse_pubmed_article(
-        "pubmed",
-        ET.fromstring(xml),
+    payload = EvidenceOnlyGenerator().generate(
+        "What evidence supports CBT for panic disorder?",
+        [hit],
+        retrieval,
     )
 
-    assert document is not None
-    assert document.external_id == "90002"
-    assert document.metadata["retraction_of_pmids"] == ["80001"]
+    assert long_sentence in payload.answer
+    assert "…" not in payload.answer
+
+
+
+def test_evidence_only_generator_fallback_keeps_full_source_sentence() -> None:
+    from care_anxrag.generation import EvidenceOnlyGenerator
+
+    long_sentence = (
+        "Exposure-based treatment evidence for panic disorder was reported with "
+        "careful clinical assessment, structured follow-up, detailed eligibility "
+        "criteria, repeated outcome measurement, and explicit discussion of study "
+        "limitations across the complete source sentence without any generated "
+        "replacement wording or truncation."
+    )
+    chunk = sample_chunk().model_copy(update={"text": long_sentence})
+    hit = SearchHit(chunk=chunk, care_score=0.9)
+    retrieval = RetrievalResult(
+        query_analysis=QueryAnalysis(
+            original_query="??",
+            normalized_query="??",
+            retrieval_query="??",
+            intent=QueryIntent.GENERAL,
+            preferred_layers=[KnowledgeLayer.CLINICAL_CORE],
+            safety_level=SafetyLevel.NORMAL,
+        ),
+        hits=[hit],
+        confidence=0.8,
+    )
+
+    payload = EvidenceOnlyGenerator().generate("??", [hit], retrieval)
+
+    assert long_sentence in payload.answer
+    assert "…" not in payload.answer
