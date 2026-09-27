@@ -18,6 +18,9 @@ from .evaluation import evaluate_ablation as run_ablation
 from .evaluation import load_benchmark
 from .logging_utils import configure_logging
 from .runtime import build_runtime
+from .safety import SafetyRouter
+from .safety_evaluation import evaluate_safety as run_safety_evaluation
+from .safety_evaluation import load_safety_benchmark
 from .scaffold import scaffold_project
 from .util import redact_sensitive_settings, utc_now
 
