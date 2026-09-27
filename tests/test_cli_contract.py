@@ -24,6 +24,7 @@ def test_cli_command_surface_contract() -> None:
         "reconcile",
         "evaluate",
         "evaluate-ablation",
+        "experiment-bundle",
         "evaluate-safety",
         "snapshot-experiment",
         "selfcheck",
