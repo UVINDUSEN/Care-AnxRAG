@@ -435,3 +435,41 @@ def test_evidence_only_generator_returns_source_text_without_paraphrasing() -> N
     assert payload.cited_source_ids == ["S1"]
     assert payload.answer.startswith("- ")
     assert "[S1]" in payload.answer
+
+
+
+def test_evidence_only_generator_does_not_truncate_source_sentence() -> None:
+    from care_anxrag.generation import EvidenceOnlyGenerator
+
+    long_sentence = (
+        "Cognitive behavioural therapy was evaluated for panic disorder in a "
+        "controlled clinical context with repeated follow-up assessments, "
+        "careful eligibility criteria, structured symptom measurement, and "
+        "clinician-supervised review of outcomes across the complete study "
+        "period without replacing the original evidence wording in the response."
+    )
+    chunk = sample_chunk().model_copy(
+        update={"text": long_sentence}
+    )
+    hit = SearchHit(chunk=chunk, care_score=0.9)
+    retrieval = RetrievalResult(
+        query_analysis=QueryAnalysis(
+            original_query="What evidence supports CBT for panic disorder?",
+            normalized_query="what evidence supports cbt for panic disorder?",
+            retrieval_query="what evidence supports cbt for panic disorder?",
+            intent=QueryIntent.TREATMENT,
+            preferred_layers=[KnowledgeLayer.CLINICAL_CORE],
+            safety_level=SafetyLevel.NORMAL,
+        ),
+        hits=[hit],
+        confidence=0.8,
+    )
+
+    payload = EvidenceOnlyGenerator().generate(
+        "What evidence supports CBT for panic disorder?",
+        [hit],
+        retrieval,
+    )
+
+    assert long_sentence in payload.answer
+    assert "…" not in payload.answer
