@@ -473,3 +473,35 @@ def test_evidence_only_generator_does_not_truncate_source_sentence() -> None:
 
     assert long_sentence in payload.answer
     assert "…" not in payload.answer
+
+
+
+def test_evidence_only_generator_fallback_keeps_full_source_sentence() -> None:
+    from care_anxrag.generation import EvidenceOnlyGenerator
+
+    long_sentence = (
+        "Exposure-based treatment evidence for panic disorder was reported with "
+        "careful clinical assessment, structured follow-up, detailed eligibility "
+        "criteria, repeated outcome measurement, and explicit discussion of study "
+        "limitations across the complete source sentence without any generated "
+        "replacement wording or truncation."
+    )
+    chunk = sample_chunk().model_copy(update={"text": long_sentence})
+    hit = SearchHit(chunk=chunk, care_score=0.9)
+    retrieval = RetrievalResult(
+        query_analysis=QueryAnalysis(
+            original_query="??",
+            normalized_query="??",
+            retrieval_query="??",
+            intent=QueryIntent.GENERAL,
+            preferred_layers=[KnowledgeLayer.CLINICAL_CORE],
+            safety_level=SafetyLevel.NORMAL,
+        ),
+        hits=[hit],
+        confidence=0.8,
+    )
+
+    payload = EvidenceOnlyGenerator().generate("??", [hit], retrieval)
+
+    assert long_sentence in payload.answer
+    assert "…" not in payload.answer
