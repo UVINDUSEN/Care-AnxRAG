@@ -209,3 +209,18 @@ def test_grounding_accepts_exact_source_text_without_nli_call() -> None:
     assert report.supported
     assert report.reason is None
     assert report.checked_pairs == 1
+
+
+
+def test_extract_claims_removes_deterministic_bullet_formatting() -> None:
+    claims = extract_claims(
+        "- CBT can reduce symptoms of panic disorder. [S1]\n"
+        "- Exposure therapy is also discussed. [S2]"
+    )
+
+    assert [claim.text for claim in claims] == [
+        "CBT can reduce symptoms of panic disorder.",
+        "Exposure therapy is also discussed.",
+    ]
+    assert claims[0].citation_ids == ("S1",)
+    assert claims[1].citation_ids == ("S2",)
