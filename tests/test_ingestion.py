@@ -509,3 +509,47 @@ def test_pubmed_retraction_relation_dry_run_does_not_mutate(runtime) -> None:
     assert active is not None
     assert active.status == DocumentStatus.ACTIVE
     assert runtime.database.list_evidence_alerts() == []
+
+
+
+def test_ingestion_propagates_clinical_facets_to_chunks(runtime) -> None:
+    from care_anxrag.models import RawDocument
+    from care_anxrag.util import utc_now
+
+    source = runtime.ingestion.sources_by_id["test_core"]
+    raw = RawDocument(
+        source_id=source.id,
+        external_id="pico-gad-cbt",
+        title="CBT for generalized anxiety disorder",
+        text=(
+            GAD_BODY
+            + "\nOlder adults with generalized anxiety disorder received "
+            "cognitive behavioural therapy."
+        ),
+        retrieved_at=utc_now(),
+        publication_types=["Randomized Controlled Trial"],
+        topics=["generalized_anxiety_disorder"],
+        metadata={
+            "pico": {
+                "population": ["Adults aged 65 years and older"],
+                "intervention": ["Cognitive behavioural therapy"],
+                "comparator": ["Treatment as usual"],
+                "outcome": ["Anxiety symptom severity"],
+            }
+        },
+    )
+
+    result = runtime.ingestion.ingest_document(source, raw)
+    version = runtime.database.get_version(result.version_id)
+    assert version is not None
+
+    chunks = runtime.database.list_chunks_for_version(result.version_id)
+    assert chunks
+    facets = chunks[0].metadata["clinical_facets"]
+
+    assert facets["anxiety_subtypes"] == [
+        "generalized_anxiety_disorder"
+    ]
+    assert "cognitive_behavioral_therapy" in facets["treatments"]
+    assert facets["pico"]["comparator"] == ["Treatment as usual"]
+    assert facets["pico"]["outcome"] == ["Anxiety symptom severity"]

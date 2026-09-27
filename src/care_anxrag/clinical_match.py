@@ -124,6 +124,86 @@ def extract_population_concepts(text: str) -> set[str]:
     return concepts
 
 
+def _annotation_values(
+    raw: object,
+) -> list[str]:
+    if isinstance(raw, str):
+        value = raw.strip()
+        return [value] if value else []
+    if not isinstance(
+        raw,
+        (list, tuple, set),
+    ):
+        return []
+    values: list[str] = []
+    for item in raw:
+        value = str(item).strip()
+        if value and value not in values:
+            values.append(value)
+    return values
+
+
+def build_clinical_evidence_facets(
+    text: str,
+    topics: Iterable[str],
+    annotated_pico: object = None,
+) -> dict[str, object]:
+    """Build traceable clinical facets without model-generated medical facts."""
+    normalized_topics = {
+        str(topic).strip().lower().replace(" ", "_")
+        for topic in topics
+        if str(topic).strip()
+    }
+    subtype_topics = (
+        normalized_topics
+        & set(_SUBTYPE_PATTERNS)
+    )
+
+    pico_input = (
+        annotated_pico
+        if isinstance(annotated_pico, dict)
+        else {}
+    )
+    pico = {
+        "population": _annotation_values(
+            pico_input.get("population")
+        ),
+        "intervention": _annotation_values(
+            pico_input.get("intervention")
+        ),
+        "comparator": _annotation_values(
+            pico_input.get("comparator")
+        ),
+        "outcome": _annotation_values(
+            pico_input.get("outcome")
+        ),
+    }
+
+    return {
+        "anxiety_subtypes": sorted(
+            extract_subtype_concepts(text)
+            | subtype_topics
+        ),
+        "treatments": sorted(
+            extract_treatment_concepts(text)
+        ),
+        "populations": sorted(
+            extract_population_concepts(text)
+        ),
+        "pico": pico,
+        "provenance": {
+            "normalized_concepts": (
+                "deterministic_phrase_match"
+            ),
+            "pico": (
+                "source_or_reviewer_metadata"
+                if any(pico.values())
+                else "not_annotated"
+            ),
+        },
+    }
+
+
 def treatment_compatibility(
     requested_treatments: Iterable[str],
     evidence_text: str,
