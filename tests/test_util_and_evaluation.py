@@ -409,3 +409,126 @@ def test_evaluation_reports_gold_evidence_coverage() -> None:
     assert report.gold_evidence_evaluable_count == 1
     assert report.gold_evidence_coverage == 1.0
     assert report.per_item[0]["gold_evidence_coverage"] == 1.0
+
+
+
+def test_evaluation_reports_active_version_accuracy() -> None:
+    active = _chunk()
+    stale = active.model_copy(
+        update={
+            "chunk_id": "chunk-stale",
+            "document_id": "doc-stale",
+            "version_id": "version-stale",
+            "status": DocumentStatus.SUPERSEDED,
+            "metadata": {"external_id": "stale-doc"},
+        }
+    )
+    active_hit = SearchHit(chunk=active, care_score=0.9)
+    stale_hit = SearchHit(chunk=stale, care_score=0.8)
+
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[active_hit, stale_hit],
+                confidence=0.9,
+                should_abstain=False,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            citation = Citation(
+                citation_id="S1",
+                chunk_id=active.chunk_id,
+                title=active.title,
+                source_name=active.source_name,
+                source_id=active.source_id,
+                url=active.url,
+                evidence_level=active.evidence_level,
+                excerpt=active.text,
+            )
+            return AnswerResponse(
+                answer=f"- {active.text} [S1]",
+                citations=[citation],
+                confidence=0.9,
+                conflict_score=0.0,
+                abstained=False,
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    report = evaluate(
+        Retriever(),
+        Rag(),
+        [
+            BenchmarkItem(
+                id="active-version",
+                question="answerable",
+                relevant_external_ids=["gold-doc"],
+            )
+        ],
+    )
+
+    assert report.active_version_evaluable_count == 1
+    assert report.active_version_accuracy == 0.5
+    assert report.per_item[0]["active_version_accuracy"] == 0.5
+
+
+def test_evaluation_reports_stale_evidence_intrusion_rate() -> None:
+    active = _chunk()
+    withdrawn = active.model_copy(
+        update={
+            "chunk_id": "chunk-withdrawn",
+            "document_id": "doc-withdrawn",
+            "version_id": "version-withdrawn",
+            "status": DocumentStatus.WITHDRAWN,
+            "metadata": {"external_id": "withdrawn-doc"},
+        }
+    )
+    active_hit = SearchHit(chunk=active, care_score=0.9)
+    withdrawn_hit = SearchHit(chunk=withdrawn, care_score=0.8)
+
+    class Retriever:
+        def retrieve(self, question: str) -> RetrievalResult:
+            return RetrievalResult(
+                query_analysis=_analysis(question),
+                hits=[active_hit, withdrawn_hit],
+                confidence=0.9,
+                should_abstain=False,
+            )
+
+    class Rag:
+        def answer(self, question: str) -> AnswerResponse:
+            citation = Citation(
+                citation_id="S1",
+                chunk_id=active.chunk_id,
+                title=active.title,
+                source_name=active.source_name,
+                source_id=active.source_id,
+                url=active.url,
+                evidence_level=active.evidence_level,
+                excerpt=active.text,
+            )
+            return AnswerResponse(
+                answer=f"- {active.text} [S1]",
+                citations=[citation],
+                confidence=0.9,
+                conflict_score=0.0,
+                abstained=False,
+                safety_level=SafetyLevel.NORMAL,
+            )
+
+    report = evaluate(
+        Retriever(),
+        Rag(),
+        [
+            BenchmarkItem(
+                id="stale-intrusion",
+                question="answerable",
+                relevant_external_ids=["gold-doc"],
+            )
+        ],
+    )
+
+    assert report.stale_evidence_evaluable_count == 1
+    assert report.stale_evidence_intrusion_rate == 0.5
+    assert report.per_item[0]["stale_evidence_intrusion_rate"] == 0.5
