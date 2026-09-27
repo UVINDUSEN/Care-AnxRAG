@@ -12,7 +12,9 @@ import typer
 import uvicorn
 
 from .config import Settings
+from .coverage import audit_corpus_coverage
 from .evaluation import evaluate as run_evaluation
+from .evaluation import evaluate_ablation as run_ablation
 from .evaluation import load_benchmark
 from .logging_utils import configure_logging
 from .runtime import build_runtime
@@ -112,6 +114,28 @@ def stats(project_root: Annotated[Path | None, typer.Option()] = None) -> None:
     typer.echo(_json(runtime.database.stats()))
 
 
+@app.command("coverage")
+def coverage(
+    subtype: Annotated[
+        str | None,
+        typer.Option(help="Optional normalized anxiety subtype to inspect"),
+    ] = None,
+    treatment: Annotated[
+        str | None,
+        typer.Option(help="Optional normalized treatment to inspect"),
+    ] = None,
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Audit direct clinical coverage in active evidence chunks."""
+    runtime = _runtime(project_root)
+    report = audit_corpus_coverage(
+        runtime.database,
+        subtype=subtype,
+        treatment=treatment,
+    )
+    typer.echo(_json(report.as_dict()))
+
+
 @app.command()
 def sources(project_root: Annotated[Path | None, typer.Option()] = None) -> None:
     runtime = _runtime(project_root)
@@ -204,18 +228,25 @@ def evaluate(
     typer.echo(_json(report.as_dict()))
 
 
-@app.command("evaluate-safety")
-def evaluate_safety_command(
-    benchmark: Annotated[
-        Path,
-        typer.Argument(help="Safety-router benchmark JSONL file"),
-    ],
+@app.command("evaluate-ablation")
+def evaluate_ablation_command(
+    benchmark: Annotated[Path, typer.Argument(help="Benchmark JSONL file")],
+    project_root: Annotated[Path | None, typer.Option()] = None,
 ) -> None:
-    report = run_safety_evaluation(
-        SafetyRouter(),
-        load_safety_benchmark(benchmark),
+    runtime = _runtime(project_root)
+    reports = run_ablation(
+        runtime.retriever,
+        runtime.rag,
+        load_benchmark(benchmark),
     )
-    typer.echo(_json(report.as_dict()))
+    typer.echo(
+        _json(
+            {
+                label: report.as_dict()
+                for label, report in reports.items()
+            }
+        )
+    )
 
 
 @app.command()
