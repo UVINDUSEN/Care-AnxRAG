@@ -44,31 +44,25 @@ def _collect_timings(runtime: Runtime, items: list[BenchmarkItem]) -> dict[str, 
             }
         )
 
-    stages = sorted(
-        {
-            stage
-            for row in rows
-            for timings_key in ("answer_timings_ms", "retrieval_timings_ms")
-            for stage in row[timings_key]
+    stage_values: dict[str, list[float]] = {}
+    for row in rows:
+        for prefix, timings_key in (
+            ("answer", "answer_timings_ms"),
+            ("retrieval", "retrieval_timings_ms"),
+        ):
+            for stage, value in row[timings_key].items():
+                stage_values.setdefault(f"{prefix}.{stage}", []).append(float(value))
+
+    summary: dict[str, dict[str, float | int]] = {}
+    for stage, values in sorted(stage_values.items()):
+        ordered = sorted(values)
+        p95_index = min(len(ordered) - 1, max(0, int((len(ordered) - 1) * 0.95)))
+        summary[stage] = {
+            "count": len(values),
+            "mean_ms": sum(values) / len(values),
+            "median_ms": ordered[len(ordered) // 2],
+            "p95_ms": ordered[p95_index],
         }
-    )
-    summary: dict[str, dict[str, float]] = {}
-    for stage in stages:
-        values = [
-            float(row[timings_key][stage])
-            for row in rows
-            for timings_key in ("answer_timings_ms", "retrieval_timings_ms")
-            if stage in row[timings_key]
-        ]
-        if values:
-            ordered = sorted(values)
-            p95_index = min(len(ordered) - 1, max(0, int((len(ordered) - 1) * 0.95)))
-            summary[stage] = {
-                "count": float(len(values)),
-                "mean_ms": sum(values) / len(values),
-                "median_ms": ordered[len(ordered) // 2],
-                "p95_ms": ordered[p95_index],
-            }
 
     return {"count": len(rows), "per_item": rows, "stage_summary": summary}
 
