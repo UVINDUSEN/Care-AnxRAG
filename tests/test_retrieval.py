@@ -688,3 +688,104 @@ def test_query_analyzer_does_not_invent_outcome_or_comorbidity() -> None:
 
     assert analysis.outcomes == []
     assert analysis.comorbidities == []
+
+
+
+def test_care_score_penalizes_explicit_outcome_mismatch(runtime) -> None:
+    from types import SimpleNamespace
+
+    analysis = QueryAnalyzer().analyze(
+        "What evidence supports CBT for GAD remission?"
+    )
+
+    common = {
+        "dense_score": 0.75,
+        "lexical_score": 0.80,
+        "rrf_normalized": 0.90,
+        "rerank_score": 0.90,
+        "freshness_score": 0.85,
+        "applicability_score": 1.0,
+    }
+
+    def hit(outcomes):
+        return SimpleNamespace(
+            **common,
+            chunk=SimpleNamespace(
+                authority_score=0.90,
+                evidence_score=0.90,
+                title="CBT for generalized anxiety disorder",
+                section_heading="Results",
+                text="Cognitive behavioural therapy was evaluated in GAD.",
+                metadata={
+                    "clinical_facets": {
+                        "outcomes": outcomes,
+                        "comorbidities": [],
+                    }
+                },
+            ),
+        )
+
+    matching = runtime.retriever._care_score(
+        hit(["remission"]),
+        analysis,
+    )
+    mismatch = runtime.retriever._care_score(
+        hit(["quality_of_life"]),
+        analysis,
+    )
+    unknown = runtime.retriever._care_score(
+        hit([]),
+        analysis,
+    )
+
+    assert mismatch < unknown < matching
+
+
+def test_care_score_penalizes_explicit_comorbidity_mismatch(runtime) -> None:
+    from types import SimpleNamespace
+
+    analysis = QueryAnalyzer().analyze(
+        "What evidence supports CBT for GAD with major depressive disorder?"
+    )
+
+    common = {
+        "dense_score": 0.75,
+        "lexical_score": 0.80,
+        "rrf_normalized": 0.90,
+        "rerank_score": 0.90,
+        "freshness_score": 0.85,
+        "applicability_score": 1.0,
+    }
+
+    def hit(comorbidities):
+        return SimpleNamespace(
+            **common,
+            chunk=SimpleNamespace(
+                authority_score=0.90,
+                evidence_score=0.90,
+                title="CBT for generalized anxiety disorder",
+                section_heading="Results",
+                text="Cognitive behavioural therapy was evaluated in GAD.",
+                metadata={
+                    "clinical_facets": {
+                        "outcomes": [],
+                        "comorbidities": comorbidities,
+                    }
+                },
+            ),
+        )
+
+    matching = runtime.retriever._care_score(
+        hit(["major_depressive_disorder"]),
+        analysis,
+    )
+    mismatch = runtime.retriever._care_score(
+        hit(["insomnia"]),
+        analysis,
+    )
+    unknown = runtime.retriever._care_score(
+        hit([]),
+        analysis,
+    )
+
+    assert mismatch < unknown < matching

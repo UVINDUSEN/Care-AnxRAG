@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import Sequence
 
 from .clinical_match import (
+    concept_set_compatibility,
     population_compatibility,
     supports_explicit_treatment_query,
     treatment_compatibility,
@@ -508,6 +509,50 @@ class CareRetriever:
             cls._clinical_text(hit),
         )
 
+    @staticmethod
+    def _clinical_facet_values(
+        hit: SearchHit,
+        name: str,
+    ) -> list[str]:
+        metadata = getattr(hit.chunk, "metadata", {}) or {}
+        facets = metadata.get("clinical_facets", {})
+        if not isinstance(facets, dict):
+            return []
+        values = facets.get(name, [])
+        if not isinstance(values, list):
+            return []
+        return [
+            str(value)
+            for value in values
+            if str(value).strip()
+        ]
+
+    @classmethod
+    def _outcome_compatibility_adjustment(
+        cls,
+        hit: SearchHit,
+        analysis,
+    ) -> float:
+        return concept_set_compatibility(
+            getattr(analysis, "outcomes", []) or [],
+            cls._clinical_facet_values(hit, "outcomes"),
+            mismatch_score=0.65,
+            unknown_score=0.85,
+        )
+
+    @classmethod
+    def _comorbidity_compatibility_adjustment(
+        cls,
+        hit: SearchHit,
+        analysis,
+    ) -> float:
+        return concept_set_compatibility(
+            getattr(analysis, "comorbidities", []) or [],
+            cls._clinical_facet_values(hit, "comorbidities"),
+            mismatch_score=0.65,
+            unknown_score=0.90,
+        )
+
     def _care_score(self, hit: SearchHit, analysis=None) -> float:
         weights = self.settings.weights
 
@@ -528,6 +573,8 @@ class CareRetriever:
 
         treatment_adjustment = 1.0
         population_adjustment = 1.0
+        outcome_adjustment = 1.0
+        comorbidity_adjustment = 1.0
 
         if analysis is not None:
             treatment_adjustment = self._treatment_compatibility_adjustment(
@@ -538,12 +585,22 @@ class CareRetriever:
                 hit,
                 analysis,
             )
+            outcome_adjustment = self._outcome_compatibility_adjustment(
+                hit,
+                analysis,
+            )
+            comorbidity_adjustment = self._comorbidity_compatibility_adjustment(
+                hit,
+                analysis,
+            )
 
         return clamp(
             base_score
             * subtype_compatibility
             * treatment_adjustment
             * population_adjustment
+            * outcome_adjustment
+            * comorbidity_adjustment
         )
 
     def _resolve_conflicts(

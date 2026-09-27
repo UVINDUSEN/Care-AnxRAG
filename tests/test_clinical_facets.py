@@ -61,3 +61,24 @@ def test_clinical_facets_do_not_infer_missing_comparator_or_outcome() -> None:
 
     assert facets["pico"]["comparator"] == []
     assert facets["pico"]["outcome"] == []
+
+
+
+def test_clinical_facets_capture_outcomes_and_comorbidities_deterministically() -> None:
+    facets = build_clinical_evidence_facets(
+        text=(
+            "Adults with generalized anxiety disorder and major depressive "
+            "disorder received cognitive behavioural therapy. Remission and "
+            "quality of life were measured."
+        ),
+        topics=["generalized_anxiety_disorder"],
+        annotated_pico=None,
+    )
+
+    assert facets["comorbidities"] == [
+        "major_depressive_disorder"
+    ]
+    assert facets["outcomes"] == [
+        "quality_of_life",
+        "remission",
+    ]
