@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from typing import Protocol, Sequence
 
 import numpy as np
@@ -151,7 +152,10 @@ class CrossEncoderNliClassifier:
         self.model_name = model_name
         # NLI requires the three unnormalized class logits. Applying softmax is
         # intentionally handled in classify() so label probabilities are explicit.
-        self.model = CrossEncoder(model_name, activation_fn=nn.Identity())
+        # Apple MPS can fail during DeBERTa's gather operation. Keep NLI on
+        # CPU on macOS; the same model and label mapping are retained.
+        device = "cpu" if sys.platform == "darwin" else None
+        self.model = CrossEncoder(model_name, activation_fn=nn.Identity(), device=device)
         self.labels = self._resolve_label_order()
 
     def _resolve_label_order(self) -> list[RelationLabel]:
