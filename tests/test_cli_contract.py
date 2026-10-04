@@ -15,6 +15,8 @@ def test_cli_command_surface_contract() -> None:
         "ask",
         "benchmark-scaffold",
         "benchmark-compile",
+        "benchmark-review-package",
+        "benchmark-validate-splits",
         "retrieve",
         "stats",
         "coverage",

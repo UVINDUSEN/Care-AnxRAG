@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .evaluation import BenchmarkItem
+from .evaluation import BenchmarkItem, load_benchmark
 from .models import DocumentStatus
 from .runtime import Runtime
 
@@ -54,7 +54,9 @@ _FIELDNAMES = [
 ]
 
 
-def write_annotation_sheet(path: Path | str, *, split: str) -> Path:
+def write_annotation_sheet(
+    path: Path | str, *, split: str, include_questions: bool = True
+) -> Path:
     normalized_split = split.strip().lower()
     if normalized_split not in {"development", "test"}:
         raise ValueError("split must be 'development' or 'test'")
@@ -64,7 +66,7 @@ def write_annotation_sheet(path: Path | str, *, split: str) -> Path:
     with output.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=_FIELDNAMES)
         writer.writeheader()
-        for item in BENCHMARK_QUESTIONS:
+        for item in BENCHMARK_QUESTIONS if include_questions else ():
             writer.writerow(
                 {
                     "id": item["id"],
@@ -89,6 +91,70 @@ def write_annotation_sheet(path: Path | str, *, split: str) -> Path:
                 }
             )
     return output
+
+
+def write_review_package(output_dir: Path | str) -> dict[str, Any]:
+    """Create unreviewed development candidates and an independent test template."""
+    output = Path(output_dir)
+    if output.exists() and (not output.is_dir() or any(output.iterdir())):
+        raise ValueError("Review package output directory must be empty")
+    output.mkdir(parents=True, exist_ok=True)
+    write_annotation_sheet(output / "development.csv", split="development")
+    # Public development questions cannot also serve as held-out test items.
+    write_annotation_sheet(output / "test.csv", split="test", include_questions=False)
+    manifest = {
+        "package_version": 1,
+        "status": "awaiting_human_review",
+        "development": {"sheet": "development.csv", "candidate_count": len(BENCHMARK_QUESTIONS)},
+        "test": {"sheet": "test.csv", "candidate_count": 0, "status": "requires_independent_authoring"},
+        "strata": [item["stratum"] for item in BENCHMARK_QUESTIONS],
+        "instructions": "docs/BENCHMARK_REVIEW_WORKFLOW.md",
+    }
+    (output / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    return manifest
+
+
+def validate_benchmark_splits(
+    development_path: Path | str, test_path: Path | str
+) -> dict[str, Any]:
+    """Check reviewed split metadata and obvious leakage without running models.
+
+    Corpus-backed evidence validation remains the compiler's responsibility;
+    semantic/paraphrase leakage still requires independent human review.
+    """
+    splits = {
+        "development": load_benchmark(development_path),
+        "test": load_benchmark(test_path),
+    }
+    ids: set[str] = set()
+    questions: set[str] = set()
+    report: dict[str, Any] = {"status": "passed"}
+    for split, items in splits.items():
+        if not items:
+            raise ValueError(f"{split} benchmark contains no items")
+        strata: dict[str, int] = {}
+        for item in items:
+            if item.split != split:
+                raise ValueError(f"Benchmark item {item.id!r} must use split={split!r}")
+            item_id = item.id.strip()
+            question = " ".join(item.question.split()).casefold()
+            stratum = item.stratum.strip()
+            if not item_id or not question or not stratum or stratum == "unspecified":
+                raise ValueError("Benchmark items require a nonblank id, question, and stratum")
+            reviewers = {reviewer.strip() for reviewer in item.annotator_ids if reviewer.strip()}
+            if not item.adjudicated or len(reviewers) < 2:
+                raise ValueError(f"Benchmark item {item.id!r} requires adjudication and two distinct reviewers")
+            if item_id in ids:
+                raise ValueError(f"Repeated benchmark id {item_id!r} within or across splits")
+            if question in questions:
+                raise ValueError(f"Repeated benchmark question for {item_id!r} within or across splits")
+            ids.add(item_id)
+            questions.add(question)
+            strata[stratum] = strata.get(stratum, 0) + 1
+        report[split] = {"count": len(items), "strata": dict(sorted(strata.items()))}
+    return report
 
 
 def compile_adjudicated_benchmark(

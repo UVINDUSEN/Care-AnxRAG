@@ -11,7 +11,12 @@ from typing import Annotated
 import typer
 import uvicorn
 
-from .benchmark_review import compile_adjudicated_benchmark, write_annotation_sheet
+from .benchmark_review import (
+    compile_adjudicated_benchmark,
+    validate_benchmark_splits,
+    write_annotation_sheet,
+    write_review_package,
+)
 from .config import Settings
 from .coverage import audit_corpus_coverage
 from .corpus_freeze import build_corpus_freeze
@@ -424,6 +429,33 @@ def benchmark_compile_command(
     runtime = _runtime(project_root)
     items = compile_adjudicated_benchmark(runtime, review_sheet, output)
     typer.echo(_json({"output": str(output), "count": len(items)}))
+
+
+@app.command("benchmark-review-package")
+def benchmark_review_package_command(
+    output_dir: Annotated[Path, typer.Argument(help="Empty reviewer package directory")],
+) -> None:
+    """Create public development candidates and a blank held-out test template."""
+    try:
+        manifest = write_review_package(output_dir)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(_json(manifest))
+
+
+@app.command("benchmark-validate-splits")
+def benchmark_validate_splits_command(
+    development: Annotated[Path, typer.Argument(help="Compiled development JSONL")],
+    test: Annotated[Path, typer.Argument(help="Compiled test JSONL")],
+) -> None:
+    """Validate reviewed splits and duplicate questions without evaluating test."""
+    try:
+        report = validate_benchmark_splits(development, test)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(_json(report))
 
 
 
