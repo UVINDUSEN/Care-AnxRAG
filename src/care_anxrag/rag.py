@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from time import perf_counter
 
+from .answer_selection import InsufficientAnswerEvidence
 from .config import Settings
 from .generation import Generator
 from .grounding import ClaimGroundingVerifier
@@ -117,6 +118,21 @@ class CareAnxRag:
             )
             timings["grounding"] = self._elapsed_ms(
                 stage_started
+            )
+        except InsufficientAnswerEvidence:
+            timings["presentation"] = self._elapsed_ms(stage_started)
+            timings["total"] = self._elapsed_ms(total_started)
+            return AnswerResponse(
+                answer=self._abstention_answer("insufficient_answer_evidence"),
+                confidence=retrieval.confidence,
+                conflict_score=retrieval.conflict_score,
+                abstained=True,
+                abstention_reason="insufficient_answer_evidence",
+                safety_level=SafetyLevel.NORMAL,
+                latest_evidence_at=retrieval.latest_evidence_at,
+                knowledge_base_last_sync_at=retrieval.knowledge_base_last_sync_at,
+                timings_ms=timings,
+                retrieval=retrieval if include_debug else None,
             )
         except Exception as exc:
             timings["total"] = self._elapsed_ms(total_started)
@@ -252,6 +268,7 @@ class CareAnxRag:
             "unresolved_high_confidence_evidence_conflict": "High-quality retrieved sources disagreed and the conflict could not be resolved safely.",
             "insufficient_direct_evidence_for_requested_treatment": "The retrieved evidence did not directly support the requested treatment together with the requested clinical context.",
             "insufficient_direct_evidence_for_requested_clinical_context": "The retrieved evidence did not jointly support the explicitly requested clinical context.",
+            "insufficient_answer_evidence": "The retrieved passages did not contain eligible answer statements or findings that preserved the requested clinical context and source population scope.",
         }
         detail = reason_map.get(reason or "", "The available evidence was insufficient or uncertain.")
         return (
