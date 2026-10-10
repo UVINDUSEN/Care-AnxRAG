@@ -2,6 +2,11 @@
 
 The benchmark must be created from the controlled evidence corpus. Do not invent gold medical claims or source IDs.
 
+Start with the [reviewer package workflow](BENCHMARK_REVIEW_WORKFLOW.md) for blank
+annotation sheets, independent development/test authoring, adjudication records,
+compilation commands, and split-validation checks. The public 17-question scaffold
+is development material; it is not an independently authored locked test set.
+
 ## Required workflow
 
 1. Freeze a corpus snapshot and record the Git commit/configuration.

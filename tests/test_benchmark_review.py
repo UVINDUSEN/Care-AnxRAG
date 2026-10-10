@@ -189,3 +189,85 @@ def test_compile_benchmark_rejects_non_active_external_id(runtime, tmp_path) -> 
 
     with pytest.raises(ValueError, match="non-active external IDs"):
         compile_adjudicated_benchmark(runtime, sheet, tmp_path / "out.jsonl")
+
+
+def test_review_package_has_development_candidates_and_empty_test_template(tmp_path) -> None:
+    from care_anxrag import benchmark_review
+
+    output = tmp_path / "package"
+    assert hasattr(benchmark_review, "write_review_package")
+    manifest = benchmark_review.write_review_package(output)
+    development = list(csv.DictReader((output / "development.csv").open()))
+    test = list(csv.DictReader((output / "test.csv").open()))
+    assert len(development) == 17
+    assert test == []
+    assert all(row["split"] == "development" for row in development)
+    human_fields = [key for key in development[0] if key.startswith(("reviewer_", "final_"))]
+    human_fields.append("adjudicated")
+    assert all(row[field] == "" for row in development for field in human_fields)
+    assert manifest["status"] == "awaiting_human_review"
+    assert len(manifest["strata"]) == 17
+    assert json.loads((output / "manifest.json").read_text()) == manifest
+    before = (output / "development.csv").read_bytes()
+    with pytest.raises(ValueError, match="empty"):
+        benchmark_review.write_review_package(output)
+    assert (output / "development.csv").read_bytes() == before
+
+
+def _write_split_fixture(path, *, split, item_id, question, adjudicated=True):
+    """Synthetic metadata solely for split validation; never a research benchmark."""
+    from care_anxrag.evaluation import BenchmarkItem
+
+    item = BenchmarkItem(
+        id=item_id, question=question, split=split, stratum="unit_test",
+        annotator_ids=["unit-test-a", "unit-test-b"], adjudicated=adjudicated,
+    )
+    path.write_text(item.model_dump_json() + "\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize("failure", ["id", "question", "split", "review", "empty"])
+def test_split_validation_rejects_leakage_and_unreviewed_items(tmp_path, failure) -> None:
+    from care_anxrag import benchmark_review
+
+    development = tmp_path / "development.jsonl"
+    test = tmp_path / "test.jsonl"
+    _write_split_fixture(development, split="development", item_id="dev", question="First question?")
+    _write_split_fixture(
+        test, split="development" if failure == "split" else "test",
+        item_id="dev" if failure == "id" else "test",
+        question="  FIRST   question?  " if failure == "question" else "Second question?",
+        adjudicated=failure != "review",
+    )
+    if failure == "empty":
+        test.write_text("")
+    assert hasattr(benchmark_review, "validate_benchmark_splits")
+    with pytest.raises(ValueError):
+        benchmark_review.validate_benchmark_splits(development, test)
+
+
+def test_split_validation_reports_counts_without_running_models(tmp_path) -> None:
+    from care_anxrag import benchmark_review
+
+    development = tmp_path / "development.jsonl"
+    test = tmp_path / "test.jsonl"
+    _write_split_fixture(development, split="development", item_id="dev", question="First question?")
+    _write_split_fixture(test, split="test", item_id="test", question="Second question?")
+    assert hasattr(benchmark_review, "validate_benchmark_splits")
+    report = benchmark_review.validate_benchmark_splits(development, test)
+    assert report["status"] == "passed"
+    assert report["development"]["count"] == report["test"]["count"] == 1
+    assert report["development"]["strata"] == {"unit_test": 1}
+
+
+def test_split_validation_rejects_whitespace_padded_unspecified_stratum(tmp_path) -> None:
+    from care_anxrag.benchmark_review import validate_benchmark_splits
+
+    development = tmp_path / "development.jsonl"
+    test = tmp_path / "test.jsonl"
+    _write_split_fixture(development, split="development", item_id="dev", question="First question?")
+    _write_split_fixture(test, split="test", item_id="test", question="Second question?")
+    payload = json.loads(test.read_text())
+    payload["stratum"] = " unspecified "
+    test.write_text(json.dumps(payload) + "\n")
+    with pytest.raises(ValueError, match="stratum"):
+        validate_benchmark_splits(development, test)

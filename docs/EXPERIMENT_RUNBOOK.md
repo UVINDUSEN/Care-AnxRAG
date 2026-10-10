@@ -34,6 +34,26 @@ configuration, models, or code changes, create a new run directory.
 
 ## Development and locked test
 
+Prepare and adjudicate both splits using the
+[reviewer workflow](BENCHMARK_REVIEW_WORKFLOW.md). Run `benchmark-validate-splits`
+before recording the human test lock. That command checks metadata and duplicate
+questions without evaluating the test set; human review must also check semantic
+overlap and evidence correctness.
+
 Tune thresholds only against the development split. Freeze code, configuration,
 corpus, and model state before running a human-adjudicated locked test. Locked-test
 results are evidence to report, not feedback for further tuning.
+
+After the human lock and a successful final `freeze-corpus` audit on the fixed
+code/configuration/model/corpus state, run:
+
+```bash
+care-anxrag experiment-final /controlled-review/anxiety-test.jsonl \
+  artifacts/experiments/test-001 \
+  --corpus-freeze artifacts/final-corpus.json \
+  --code-revision "$(git rev-parse HEAD)" --project-root .
+```
+
+Replace the restricted path with the custodian's actual locked test location.
+The existing final preflight verifies the freeze and review metadata; the split
+separation and human lock above remain required procedural checks.

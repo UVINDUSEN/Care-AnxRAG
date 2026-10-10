@@ -79,6 +79,11 @@ The SQLite ledger is the source of truth. Vector results are always joined back 
 
 See [Architecture](docs/ARCHITECTURE.md) for the detailed component and transaction design.
 
+Research benchmark preparation starts with the
+[reviewer-ready development/test workflow](docs/BENCHMARK_REVIEW_WORKFLOW.md).
+The public annotation sheets are unreviewed candidates and an empty test template;
+they contain no locked research labels or measured final results.
+
 ## Repository layout
 
 ```text
