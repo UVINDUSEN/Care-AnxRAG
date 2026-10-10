@@ -442,7 +442,7 @@ def test_evidence_only_generator_does_not_truncate_source_sentence() -> None:
     from care_anxrag.generation import EvidenceOnlyGenerator
 
     long_sentence = (
-        "Cognitive behavioural therapy was evaluated for panic disorder in a "
+        "Cognitive behavioural therapy reduced panic disorder symptoms in a "
         "controlled clinical context with repeated follow-up assessments, "
         "careful eligibility criteria, structured symptom measurement, and "
         "clinician-supervised review of outcomes across the complete study "

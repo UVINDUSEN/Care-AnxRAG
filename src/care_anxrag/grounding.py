@@ -5,11 +5,10 @@ from dataclasses import dataclass, field
 from typing import Protocol, Sequence
 
 from .models import GeneratedPayload, RelationLabel, SearchHit
-from .util import content_tokens, normalize_whitespace
+from .util import content_tokens, normalize_whitespace, source_sentences
 
 
 _CITATION_RE = re.compile(r"\[(S\d+)\]")
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])(?:\s+|$)|\n+")
 
 
 class TextNliClassifier(Protocol):
@@ -60,7 +59,7 @@ def extract_claims(answer: str) -> list[GroundedClaim]:
     )
 
     claims: list[GroundedClaim] = []
-    for raw_sentence in _SENTENCE_SPLIT_RE.split(canonical):
+    for raw_sentence in source_sentences(canonical):
         sentence = normalize_whitespace(raw_sentence)
         if not sentence:
             continue
