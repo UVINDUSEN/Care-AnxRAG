@@ -7,8 +7,9 @@ from typing import Protocol, Sequence
 import httpx
 from pydantic import ValidationError
 
+from .answer_selection import InsufficientAnswerEvidence, select_answer_sentence
 from .models import GeneratedPayload, RetrievalResult, SearchHit
-from .util import content_tokens, normalize_whitespace
+from .query import QueryAnalyzer
 
 
 class Generator(Protocol):
@@ -31,21 +32,27 @@ class EvidenceOnlyGenerator:
         hits: Sequence[SearchHit],
         retrieval: RetrievalResult,
     ) -> GeneratedPayload:
-        if not hits:
-            return GeneratedPayload(
-                answer="The available evidence is insufficient for a grounded answer.",
-                cited_source_ids=[],
-                uncertainty="No evidence was supplied.",
-            )
-
         sentences: list[str] = []
         cited: list[str] = []
+        seen: set[str] = set()
+        analysis = QueryAnalyzer().analyze(question)
 
-        for index, hit in enumerate(hits[:3], start=1):
+        for index, hit in enumerate(hits, start=1):
+            excerpt = select_answer_sentence(hit, analysis)
+            if excerpt is None:
+                continue
+            identity = " ".join(excerpt.split()).casefold()
+            if identity in seen:
+                continue
+            seen.add(identity)
             source_id = f"S{index}"
-            excerpt = _best_sentence(hit.chunk.text, question)
             sentences.append(f"- {excerpt} [{source_id}]")
             cited.append(source_id)
+            if len(sentences) == 3:
+                break
+
+        if not sentences:
+            raise InsufficientAnswerEvidence()
 
         return GeneratedPayload(
             answer="\n".join(sentences),
@@ -289,70 +296,3 @@ def _payload_is_valid(
         return False
 
     return True
-
-
-def _first_sentence(
-    text: str,
-    max_characters: int = 280,
-) -> str:
-    del max_characters  # retained for compatibility; extractive text is never truncated.
-    normalized = normalize_whitespace(text)
-
-    match = re.search(
-        r"^(.+?[.!?])(?:\s|$)",
-        normalized,
-    )
-
-    return match.group(1) if match else normalized
-
-
-def _best_sentence(
-    text: str,
-    question: str,
-    max_characters: int = 280,
-) -> str:
-    """Select the most query-relevant sentence for deterministic smoke-test output."""
-
-    normalized = normalize_whitespace(text)
-
-    candidates = [
-        part.strip()
-        for part in re.split(
-            r"(?<=[.!?])(?:\s+|$)|\n+",
-            normalized,
-        )
-        if part.strip()
-        and not part.lstrip().startswith("#")
-    ]
-
-    query_tokens = set(
-        content_tokens(question)
-    )
-
-    if not candidates or not query_tokens:
-        return _first_sentence(
-            normalized,
-            max_characters,
-        )
-
-    def score(
-        sentence: str,
-    ) -> tuple[float, int]:
-        sentence_tokens = set(
-            content_tokens(sentence)
-        )
-
-        overlap = (
-            len(query_tokens & sentence_tokens)
-            / max(1, len(query_tokens))
-        )
-
-        return overlap, -len(sentence)
-
-    selected = max(
-        candidates,
-        key=score,
-    )
-
-    return selected
-
