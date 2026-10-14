@@ -71,3 +71,19 @@ For safety-critical evaluation, aggregate accuracy is not sufficient. A system c
 ## Interpretation
 
 This evaluator measures the current rule-based router. It does not prove clinical safety. Final deployment decisions require localized crisis policy, independent expert review, and testing representative of the intended population and setting.
+
+
+## Locked test review requirement
+
+Safety benchmark items with `split="test"` are treated as locked research labels.
+Before metrics are calculated, every such item must have:
+
+- `adjudicated=true`;
+- at least two distinct non-empty `annotator_ids`.
+
+The evaluator fails closed if either condition is missing. Development/unassigned
+items remain usable for rule development and tooling checks without this locked-test
+preflight, but they must not be reported as final held-out safety results.
+
+This software check verifies metadata structure only. It cannot establish reviewer
+qualifications, independence, or the clinical correctness of the adjudicated label.
