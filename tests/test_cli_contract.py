@@ -39,3 +39,23 @@ def test_cli_command_surface_contract() -> None:
     }
 
     assert expected <= registered
+
+
+def test_cli_command_registrations_are_unique() -> None:
+    registered_names: list[str] = []
+    for command in app.registered_commands:
+        if command.name is not None:
+            registered_names.append(command.name)
+            continue
+        assert command.callback is not None
+        registered_names.append(
+            command.callback.__name__.replace("_", "-")
+        )
+
+    duplicates = sorted(
+        name
+        for name in set(registered_names)
+        if registered_names.count(name) > 1
+    )
+
+    assert duplicates == []
