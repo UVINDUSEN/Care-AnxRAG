@@ -26,6 +26,7 @@ def _body(label: str) -> str:
 
 
 def _stage_one(runtime, project: Path, *, title: str = "Review candidate"):
+    runtime.sources[0].auto_promote = False
     write_document(
         project,
         "candidate.md",
