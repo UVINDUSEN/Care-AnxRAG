@@ -12,7 +12,7 @@ The offline test stack uses:
 - deterministic feature-hash embeddings;
 - heuristic reranker;
 - sentence-level heuristic NLI;
-- rule-based generator.
+- deterministic extractive evidence renderer.
 
 This validates orchestration and safety properties without network/model nondeterminism.
 
@@ -38,7 +38,7 @@ This validates orchestration and safety properties without network/model nondete
 - conservative PMC licence handling, including restricted-marker precedence;
 - recursive secret redaction and rejection of plaintext registry credentials;
 - packaged project scaffolding resources;
-- evaluation accounting for abstention-only items through `retrieval_evaluable_count`;\n- retrieval ablation modes, pipeline timings, safety-router evaluation, corpus coverage auditing, and experiment reproducibility snapshots;
+- evaluation accounting for abstention-only items through `retrieval_evaluable_count`;\n- research ablation modes and stage timing instrumentation;\n- corpus coverage/freeze gates and final-experiment preflight;\n- safety benchmark evaluation, reproducibility snapshots, paired statistics, experiment bundles, and benchmark review/split-validation tooling;\n- retrieval ablation modes, pipeline timings, safety-router evaluation, corpus coverage auditing, and experiment reproducibility snapshots;
 - wheel/source-distribution contents, install/import, CLI, and packaged self-check.
 
 ## Environment limitations

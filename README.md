@@ -349,25 +349,64 @@ care-anxrag reconcile --reset-embedding-index --project-root .
 
 ## 14. Evaluate the research system
 
-Create a benchmark using the format in `data/benchmark/example.jsonl`, then run:
+`data/benchmark/example.jsonl` is synthetic schema/test data, not final research evidence. Human-reviewed development and independently authored held-out test benchmarks must follow [Benchmark review workflow](docs/BENCHMARK_REVIEW_WORKFLOW.md).
+
+Single-mode evaluation:
 
 ```bash
-care-anxrag evaluate data/benchmark/example.jsonl --project-root .
+care-anxrag evaluate path/to/adjudicated-benchmark.jsonl --project-root .
 ```
 
-Implemented metrics:
+Full B0-B5 + CARE_full ablation:
 
-- Recall@5
-- Precision@5
-- Mean Reciprocal Rank
-- nDCG@5
-- abstention accuracy
-- conflict-detection accuracy
-- citation validity
+```bash
+care-anxrag evaluate-ablation path/to/adjudicated-benchmark.jsonl --project-root .
+```
 
-Retrieval metrics are averaged only across benchmark records that contain `relevant_external_ids` or `relevant_source_ids`; intentionally out-of-domain/abstention-only records are reported separately through `retrieval_evaluable_count` and are not treated as retrieval failures.
+Immutable development experiment bundle:
 
-For publishable research, add expert-rated correctness, faithfulness, clinical appropriateness, conflict resolution, authority precision, unsafe confidence, and subgroup analyses. See [Research protocol](docs/RESEARCH_PROTOCOL.md).
+```bash
+care-anxrag experiment-bundle \
+  path/to/anxiety-development.jsonl \
+  artifacts/experiments/development-001 \
+  --code-revision "$(git rev-parse HEAD)" \
+  --project-root .
+```
+
+Before a locked final experiment, freeze the real corpus and then use the strict preflight command:
+
+```bash
+care-anxrag freeze-corpus artifacts/final-corpus.json \
+  --benchmark /controlled-review/anxiety-test.jsonl \
+  --code-revision "$(git rev-parse HEAD)" \
+  --project-root .
+
+care-anxrag experiment-final \
+  /controlled-review/anxiety-test.jsonl \
+  artifacts/experiments/test-001 \
+  --corpus-freeze artifacts/final-corpus.json \
+  --code-revision "$(git rev-parse HEAD)" \
+  --project-root .
+```
+
+Implemented automated metrics include:
+
+- Recall@5, Precision@5, MRR, and nDCG@5
+- abstention accuracy and conflict-detection accuracy
+- citation validity and extractive faithfulness
+- exact gold-evidence coverage
+- prohibited-evidence intrusion rate
+- active-version accuracy and stale/superseded evidence intrusion rate
+- per-stratum summaries
+- paired baseline-vs-CARE comparisons from the experiment statistics tooling
+
+Safety-router evaluation is separate:
+
+```bash
+care-anxrag evaluate-safety path/to/adjudicated-safety-benchmark.jsonl
+```
+
+Retrieval metrics are averaged only across benchmark records with retrieval relevance labels. Development data may be used for tuning; locked-test outcomes must not change code, corpus, models, thresholds, or configuration. Automated metrics supplement rather than replace qualified human review for the primary clinical/evidence judgments. See [Research protocol](docs/RESEARCH_PROTOCOL.md) and [Experiment runbook](docs/EXPERIMENT_RUNBOOK.md).
 
 # CARE scoring and abstention
 
