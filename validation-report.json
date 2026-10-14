@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-14T09:27:29.008202+00:00",
+  "generated_at": "2026-10-14T09:32:50.683342+00:00",
   "status": "passed",
   "project": {
     "name": "care-anxrag",
@@ -25,7 +25,7 @@
     "enabled_source_count": 5,
     "packaged_resources_match": true,
     "benchmark_record_count": 2,
-    "local_markdown_links_checked": 13,
+    "local_markdown_links_checked": 15,
     "ruff": {
       "status": "not_executed",
       "reason": "Ruff is not installed in the offline validation environment; compileall, tabnanny, shell parsing, tests, and package audits were executed instead."
@@ -51,7 +51,7 @@
       "vector_store": true,
       "ollama": null,
       "details": {
-        "database_path": "/tmp/care-anxrag-validation.GZQjHu/selfcheck/care.sqlite3",
+        "database_path": "/tmp/care-anxrag-validation.iDmydb/selfcheck/care.sqlite3",
         "vector_backend": "sqlite",
         "embedding_provider": "hash",
         "generator_provider": "rule",
@@ -71,9 +71,9 @@
   "offline_acceptance": {
     "status": "passed",
     "sync": {
-      "run_id": "ed58656f3566ca23e2444b2b",
-      "started_at": "2026-10-14T09:27:24.971230Z",
-      "finished_at": "2026-10-14T09:27:24.983459Z",
+      "run_id": "32b49289766c081705dbc98d",
+      "started_at": "2026-10-14T09:32:46.154222Z",
+      "finished_at": "2026-10-14T09:32:46.169540Z",
       "source_ids": [
         "synthetic_demo"
       ],
@@ -91,7 +91,7 @@
     "answerable": {
       "abstained": false,
       "citation_count": 1,
-      "confidence": 0.5346511334756375
+      "confidence": 0.5346511093422351
     },
     "out_of_domain": {
       "abstained": true,
@@ -192,15 +192,15 @@
     "status": "passed",
     "wheel": {
       "name": "care_anxrag-0.1.0-py3-none-any.whl",
-      "size_bytes": 118181,
-      "sha256": "3fa54eef0425f7c8bfcd47921c8510f898306baf94d311238de4d224486c1ec6",
+      "size_bytes": 118608,
+      "sha256": "034c4a604686688fc541b1729deda0448002057b014383fed37c8a8c88e12c5a",
       "file_count": 52,
       "required_files_present": true
     },
     "source_distribution": {
       "name": "care_anxrag-0.1.0.tar.gz",
-      "size_bytes": 191123,
-      "sha256": "d63923438815470caaf8567d2aca97683c9ef59dad673ce659be28b1381d42a9",
+      "size_bytes": 191976,
+      "sha256": "9babd28b9d545a9d0c4eaf6843fab50e46199850131f7b0a8866dc203ad02461",
       "file_count": 145,
       "required_files_present": true
     },
@@ -208,8 +208,8 @@
     "import_and_cli": "passed",
     "installed_wheel_init": {
       "scaffold": {
-        "/tmp/care-anxrag-validation.GZQjHu/wheel-project/config/sources.yaml": "written",
-        "/tmp/care-anxrag-validation.GZQjHu/wheel-project/.env.example": "written"
+        "/tmp/care-anxrag-validation.iDmydb/wheel-project/config/sources.yaml": "written",
+        "/tmp/care-anxrag-validation.iDmydb/wheel-project/.env.example": "written"
       },
       "health": {
         "status": "ok",
@@ -217,7 +217,7 @@
         "vector_store": true,
         "ollama": null,
         "details": {
-          "database_path": "/tmp/care-anxrag-validation.GZQjHu/wheel-project/var/care.sqlite3",
+          "database_path": "/tmp/care-anxrag-validation.iDmydb/wheel-project/var/care.sqlite3",
           "vector_backend": "sqlite",
           "embedding_provider": "hash",
           "generator_provider": "rule",
@@ -238,7 +238,7 @@
         "vector_store": true,
         "ollama": null,
         "details": {
-          "database_path": "/tmp/care-anxrag-validation.GZQjHu/wheel-project/var/care.sqlite3",
+          "database_path": "/tmp/care-anxrag-validation.iDmydb/wheel-project/var/care.sqlite3",
           "vector_backend": "sqlite",
           "embedding_provider": "hash",
           "generator_provider": "rule",
@@ -256,7 +256,7 @@
       "weights_sum": 1
     }
   },
-  "release_source_tree_sha256": "4b7650ee4e9644a530cedc3bc0798cee110dda4096fa2766ff2ebba41d6f5389",
+  "release_source_tree_sha256": "5500e21f3ca57e6c8b1efc7eb0f190c1da56f56147a0cad102f675cfd769be69",
   "not_executed_in_this_offline_environment": [
     "live NIMH/WHO/PubMed/PMC/NICE synchronization",
     "licensed NICE endpoint authentication",
