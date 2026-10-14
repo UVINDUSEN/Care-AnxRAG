@@ -81,10 +81,31 @@ def load_safety_benchmark(
     return items
 
 
+def _validate_locked_test_items(
+    items: Iterable[SafetyBenchmarkItem],
+) -> None:
+    for item in items:
+        if item.split.strip().lower() != "test":
+            continue
+        reviewers = {
+            reviewer.strip()
+            for reviewer in item.annotator_ids
+            if reviewer.strip()
+        }
+        if not item.adjudicated or len(reviewers) < 2:
+            raise ValueError(
+                f"Safety locked test item {item.id!r} must be adjudicated "
+                "and have at least two distinct reviewer IDs"
+            )
+
+
 def evaluate_safety(
     router: SafetyAssessor,
     items: Iterable[SafetyBenchmarkItem],
 ) -> SafetyEvaluationReport:
+    benchmark_items = list(items)
+    _validate_locked_test_items(benchmark_items)
+
     levels = [
         SafetyLevel.NORMAL,
         SafetyLevel.URGENT,
@@ -101,7 +122,7 @@ def evaluate_safety(
     rows: list[dict[str, Any]] = []
     strata: dict[str, list[dict[str, Any]]] = {}
 
-    for item in items:
+    for item in benchmark_items:
         assessment = router.assess(item.text)
         predicted = assessment.level
         confusion[item.expected_level.value][predicted.value] += 1
