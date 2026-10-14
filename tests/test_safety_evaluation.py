@@ -147,7 +147,7 @@ def test_evaluate_safety_cli_outputs_report(tmp_path) -> None:
 def test_locked_safety_test_requires_adjudication_and_two_reviewers() -> None:
     import pytest
 
-    with pytest.raises(ValueError, match="locked safety test item"):
+    with pytest.raises(ValueError, match="locked test item"):
         evaluate_safety(
             SafetyRouter(),
             [
