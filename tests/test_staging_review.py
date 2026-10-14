@@ -204,3 +204,122 @@ def test_apply_review_approves_only_after_explicit_apply(
     updated = runtime.database.get_version(version.version_id)
     assert updated is not None
     assert updated.status.value == "active"
+
+
+
+def test_staging_review_package_cli_writes_blank_decisions(
+    runtime,
+    project: Path,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from typer.testing import CliRunner
+
+    from care_anxrag.cli import app
+
+    version = _stage_one(runtime, project, title="CLI review candidate")
+    hints = tmp_path / "hints.json"
+    hints.write_text(
+        json.dumps(
+            [
+                {
+                    "version_id": version.version_id,
+                    "title": version.title,
+                    "role": "out_of_domain",
+                    "evidence_role": "result_evidence",
+                    "score": 0.2,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "review.csv"
+
+    monkeypatch.setenv("CARE_HOME", str(runtime.settings.care_home))
+    monkeypatch.setenv("CARE_DATABASE_PATH", str(runtime.settings.database_path))
+    monkeypatch.setenv("CARE_VECTOR_PATH", str(runtime.settings.vector_path))
+    monkeypatch.setenv(
+        "CARE_SOURCE_REGISTRY",
+        str(runtime.settings.source_registry_path),
+    )
+    monkeypatch.setenv("CARE_VECTOR_BACKEND", "sqlite")
+    monkeypatch.setenv("CARE_EMBEDDING_PROVIDER", "hash")
+    monkeypatch.setenv("CARE_EMBEDDING_MODEL", "hash")
+    monkeypatch.setenv("CARE_EMBEDDING_DIMENSIONS", "256")
+    monkeypatch.setenv("CARE_GENERATOR_PROVIDER", "extractive")
+    monkeypatch.setenv("CARE_RERANKER_PROVIDER", "heuristic")
+    monkeypatch.setenv("CARE_NLI_PROVIDER", "heuristic")
+    monkeypatch.setenv("CARE_ALLOW_NETWORK_SYNC", "false")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "staging-review-package",
+            str(output),
+            "--hints",
+            str(hints),
+            "--project-root",
+            str(project),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    rows = _read_rows(output)
+    assert rows[0]["decision"] == ""
+    assert rows[0]["historical_hint_role"] == "out_of_domain"
+
+
+def test_staging_review_apply_cli_is_dry_run_without_apply_flag(
+    runtime,
+    project: Path,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import json as json_module
+
+    from typer.testing import CliRunner
+
+    from care_anxrag.cli import app
+
+    version = _stage_one(runtime, project)
+    review = tmp_path / "review.csv"
+    write_staging_review_package(runtime, review)
+    rows = _read_rows(review)
+    rows[0]["decision"] = "reject"
+    rows[0]["decision_reason"] = "Human review: outside scope"
+    rows[0]["reviewer_id"] = "reviewer-1"
+    _write_rows(review, rows)
+
+    monkeypatch.setenv("CARE_HOME", str(runtime.settings.care_home))
+    monkeypatch.setenv("CARE_DATABASE_PATH", str(runtime.settings.database_path))
+    monkeypatch.setenv("CARE_VECTOR_PATH", str(runtime.settings.vector_path))
+    monkeypatch.setenv(
+        "CARE_SOURCE_REGISTRY",
+        str(runtime.settings.source_registry_path),
+    )
+    monkeypatch.setenv("CARE_VECTOR_BACKEND", "sqlite")
+    monkeypatch.setenv("CARE_EMBEDDING_PROVIDER", "hash")
+    monkeypatch.setenv("CARE_EMBEDDING_MODEL", "hash")
+    monkeypatch.setenv("CARE_EMBEDDING_DIMENSIONS", "256")
+    monkeypatch.setenv("CARE_GENERATOR_PROVIDER", "extractive")
+    monkeypatch.setenv("CARE_RERANKER_PROVIDER", "heuristic")
+    monkeypatch.setenv("CARE_NLI_PROVIDER", "heuristic")
+    monkeypatch.setenv("CARE_ALLOW_NETWORK_SYNC", "false")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "staging-review-apply",
+            str(review),
+            "--project-root",
+            str(project),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json_module.loads(result.output)
+    assert payload["dry_run"] is True
+    assert payload["applied"] == 0
+    unchanged = runtime.database.get_version(version.version_id)
+    assert unchanged is not None
+    assert unchanged.status.value == "staging"
