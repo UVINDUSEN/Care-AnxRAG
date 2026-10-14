@@ -15,14 +15,15 @@
 - `main`: `0b5d104beace5796ae088d9ab06f8e64786e3dd0`
 - GitHub CI: green on current `main`
 - Central sync workflow: green
-- No open pull requests
-- Validation report: 205 tests, 0 failures, 80.06% coverage
-- Extractive answer selection, exact-source grounding, ablations, timings, safety evaluation, reproducibility snapshots, paired statistics, corpus coverage, corpus freeze, final-experiment preflight, benchmark reviewer package, and split validation are merged
-- Current reviewer package: 17 development candidates; held-out test sheet is intentionally empty and requires independent authoring
-- No final measured experiment artifacts are committed
+- Core research stack is merged: extractive answer selection, exact-source grounding, ablations, timings, PubMed correction monitoring, clinical facets, joint sufficiency, safety evaluation, reproducibility snapshots, paired statistics, corpus coverage, corpus freeze, final-experiment preflight, benchmark reviewer package, and split validation
+- PR #30 is open and green: removes duplicate Typer registrations, refreshes validation docs/report, and reports 216 passing tests with 80.3131% coverage
+- PR #31 is open and green, stacked on #30: adds safe human staging-review package/apply workflow for the 47 unresolved PubMed staging versions
+- PR #32 is open and green, independent: requires two distinct reviewers + adjudication for locked safety-test evaluation
+- PR #29 is this planning PR
+- Current reviewer package has 17 development candidates; held-out test content must still be independently authored/reviewed
+- No final held-out experiment artifacts are committed
 - `docs/FINAL_RESULTS.md`, `docs/ERROR_ANALYSIS.md`, and `docs/VIVA_DEMO.md` do not yet exist
-- CI does not validate the real Chroma/Ollama/CrossEncoder stack or clinical correctness
-- Hidden CLI hygiene issue: `evaluate-safety` and `snapshot-experiment` are each registered twice in `src/care_anxrag/cli.py`
+- CI does not validate the real Chroma/Ollama/CrossEncoder stack, the user's live corpus, reviewer qualifications, or clinical correctness
 
 ## Global Constraints
 
@@ -43,6 +44,18 @@
 - Development/test split leakage must be prevented procedurally and with existing split-validation tooling.
 - Final metrics must come from immutable experiment artifacts, not manually copied estimates.
 - Central-backend/viva behavior must be tested on the same final code/config used for reported results.
+
+---
+
+## Immediate Merge / Execution Order
+
+1. Merge PR #30 first.
+2. Retarget PR #31 from `fix/final-cli-command-dedup` to `main`, refresh it against the new `main`, rerun exact-head CI, then merge it.
+3. Refresh PR #32 against the resulting `main`, rerun exact-head CI, then merge it.
+4. Merge this planning PR #29 after the implementation PRs, or update it once more if any merge changes the closeout commands.
+5. Stop feature development after these merges unless a deterministic development-set failure proves a release-blocking defect.
+
+After that point, the critical path is operational/research work: staging review → corpus freeze → development benchmark review → development experiments/calibration → independently authored held-out test → locked safety test → one final experiment → latency/integration verification → final documents → release tag.
 
 ---
 
