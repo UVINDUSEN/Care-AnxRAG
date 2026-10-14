@@ -31,6 +31,10 @@ from .safety import SafetyRouter
 from .safety_evaluation import evaluate_safety as run_safety_evaluation
 from .safety_evaluation import load_safety_benchmark
 from .scaffold import scaffold_project
+from .staging_review import (
+    apply_staging_review,
+    write_staging_review_package,
+)
 from .util import redact_sensitive_settings, utc_now
 
 
@@ -165,6 +169,55 @@ def sources(project_root: Annotated[Path | None, typer.Option()] = None) -> None
 def staging(project_root: Annotated[Path | None, typer.Option()] = None) -> None:
     runtime = _runtime(project_root)
     typer.echo(_json(runtime.database.list_staging_versions()))
+
+
+@app.command("staging-review-package")
+def staging_review_package_command(
+    output: Annotated[Path, typer.Argument(help="Reviewer CSV output path")],
+    hints: Annotated[
+        Path | None,
+        typer.Option(help="Optional historical screening-plan JSON used only as hints"),
+    ] = None,
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Create a human-review sheet for every currently staged version."""
+    runtime = _runtime(project_root)
+    try:
+        report = write_staging_review_package(
+            runtime,
+            output,
+            hints_path=hints,
+        )
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(_json(report))
+
+
+@app.command("staging-review-apply")
+def staging_review_apply_command(
+    review: Annotated[Path, typer.Argument(help="Completed staging review CSV")],
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Apply validated decisions. Without this flag the command is dry-run only.",
+        ),
+    ] = False,
+    project_root: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Validate reviewed staging decisions and optionally apply them."""
+    runtime = _runtime(project_root)
+    try:
+        report = apply_staging_review(
+            runtime,
+            review,
+            apply=apply,
+        )
+    except (ValueError, KeyError, RuntimeError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(_json(report))
 
 
 @app.command()
