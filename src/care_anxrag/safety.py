@@ -14,7 +14,7 @@ class SafetyAssessment:
 
 class SafetyRouter:
     _crisis_patterns = [
-        r"\bkill myself\b",
+        r"\bkill(?:ing)? myself\b",
         r"\bend my life\b",
         r"\bi(?:'m| am| feel| have been)?\s+suicidal\b",
         r"\bmy suicidal (?:thoughts|plan|intent)\b",
