@@ -110,7 +110,14 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
     for sentence in candidates:
         if _NON_FINDING.search(sentence):
             continue
-        if analysis.intent == QueryIntent.TREATMENT and not _FINDING.search(sentence):
+        # Descriptive queries may list or identify an intervention without
+        # claiming effectiveness. All other treatment queries require a
+        # genuine evidence/finding statement, rather than general background.
+        if (
+            analysis.intent == QueryIntent.TREATMENT
+            and not _DESCRIPTIVE_QUESTION.search(analysis.normalized_query)
+            and not _FINDING.search(sentence)
+        ):
             continue
         if requires_finding and not _FINDING.search(sentence):
             continue
