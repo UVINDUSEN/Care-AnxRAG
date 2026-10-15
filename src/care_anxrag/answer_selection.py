@@ -50,7 +50,8 @@ _FINDING = re.compile(
 )
 _EFFECTIVENESS_QUESTION = re.compile(
     r"\b(?:effective(?:ness)?|efficacy|works?|helps?|helpful|benefits?|"
-    r"reduc\w*|improv\w*|outcomes?|results?|findings?)\b",
+    r"reduc\w*|improv\w*|outcomes?|results?|findings?|"
+    r"support(?:ed|s|ing)?|recommended|recommendations?|best|first[- ]line)\b",
     re.I,
 )
 _DESCRIPTIVE_QUESTION = re.compile(r"\b(?:discussed|mentioned|listed|delivered|offered|used)\b", re.I)
@@ -108,6 +109,15 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
     eligible: list[str] = []
     for sentence in candidates:
         if _NON_FINDING.search(sentence):
+            continue
+        # Descriptive queries may list or identify an intervention without
+        # claiming effectiveness. All other treatment queries require a
+        # genuine evidence/finding statement, rather than general background.
+        if (
+            analysis.intent == QueryIntent.TREATMENT
+            and not _DESCRIPTIVE_QUESTION.search(analysis.normalized_query)
+            and not _FINDING.search(sentence)
+        ):
             continue
         if requires_finding and not _FINDING.search(sentence):
             continue

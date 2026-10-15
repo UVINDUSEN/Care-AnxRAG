@@ -258,7 +258,14 @@ class CareAnxRag:
 
     @staticmethod
     def _abstention_answer(reason: str | None) -> str:
+        if reason == "personal_diagnosis_not_supported":
+            return (
+                "No. CARE-AnxRAG cannot diagnose an individual or determine "
+                "whether they have an anxiety disorder. A qualified clinician "
+                "must independently assess symptoms and clinical context."
+            )
         reason_map = {
+            "outside_anxiety_scope": "This request is outside the supported anxiety-evidence scope.",
             "no_relevant_evidence_retrieved": "No relevant evidence was retrieved from the active knowledge base.",
             "no_active_evidence_after_conflict_resolution": "No active evidence remained after conflict resolution.",
             "top_evidence_below_relevance_threshold": "The strongest retrieved evidence was not relevant enough.",

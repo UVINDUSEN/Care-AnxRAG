@@ -158,7 +158,7 @@ class ClaimGroundingVerifier:
                     continue
 
                 checked_pairs += 1
-                source_text = normalize_whitespace(hit.chunk.text)
+                source_text = re.sub(r"\s+([.!?,;:])", r"\1", normalize_whitespace(hit.chunk.text))
                 if normalized_claim not in source_text:
                     failures.append(
                         GroundingFailure(

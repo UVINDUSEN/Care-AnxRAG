@@ -30,6 +30,7 @@ from .nli import NliClassifier
 from .query import QueryAnalyzer
 from .rerank import Reranker
 from .safety import SafetyRouter
+from .scope import is_anxiety_information_query, is_personal_diagnosis_request
 from .util import clamp, fts_query
 from .vector_store import VectorStore, collection_for_layer
 
@@ -93,6 +94,23 @@ class CareRetriever:
                 confidence=0.0,
                 should_abstain=True,
                 abstention_reason=safety.reason,
+                knowledge_base_last_sync_at=self.database.last_successful_sync_at(),
+                timings_ms=timings,
+            )
+
+        if is_personal_diagnosis_request(query) or not is_anxiety_information_query(query):
+            reason = (
+                "personal_diagnosis_not_supported"
+                if is_personal_diagnosis_request(query)
+                else "outside_anxiety_scope"
+            )
+            timings["total"] = self._elapsed_ms(total_started)
+            return RetrievalResult(
+                query_analysis=analysis,
+                hits=[],
+                confidence=0.0,
+                should_abstain=True,
+                abstention_reason=reason,
                 knowledge_base_last_sync_at=self.database.last_successful_sync_at(),
                 timings_ms=timings,
             )

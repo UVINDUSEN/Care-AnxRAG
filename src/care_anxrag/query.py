@@ -156,7 +156,7 @@ class QueryAnalyzer:
             return QueryIntent.MEDICATION
 
         if re.search(
-            r"\b(treat|treatment|therapy|cbt|exposure|intervention|recommended)\b",
+            r"\b(treat(?:ment|ments|ed|ing|s)?|therap(?:y|ies)|cbt|exposure|interventions?|recommended|recommendations?)\b",
             query,
         ):
             return QueryIntent.TREATMENT
@@ -168,7 +168,7 @@ class QueryAnalyzer:
             return QueryIntent.SYMPTOMS
 
         if re.search(
-            r"\b(diagnos|do i have|is this anxiety|test for)\b",
+            r"\b(diagnos(?:e|es|ed|ing|is|tic)?|do i have|is this anxiety|test for)\b",
             query,
         ):
             return QueryIntent.DIAGNOSIS
