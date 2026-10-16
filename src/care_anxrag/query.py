@@ -85,6 +85,8 @@ class QueryAnalyzer:
             for subtype, patterns in _SUBTYPE_PATTERNS.items()
             if any(pattern in padded for pattern in patterns)
         ]
+        if re.search(r"\bgad\b", normalized) and "generalized_anxiety_disorder" not in subtypes:
+            subtypes.append("generalized_anxiety_disorder")
 
         treatments = sorted(extract_treatment_concepts(normalized))
         outcomes = sorted(extract_outcome_concepts(normalized))
