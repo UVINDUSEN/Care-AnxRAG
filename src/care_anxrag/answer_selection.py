@@ -40,7 +40,7 @@ _NON_FINDING = re.compile(
 )
 _FINDING = re.compile(
     r"\b(?:reduc(?:e[sd]?|ing|tion)|improv(?:e[sd]?|ing|ement)|benefit(?:s|ed)?|"
-    r"effective(?:ness)?|efficacy|efficacious|useful in treat\w*|remission|response rate|relapse|"
+    r"effective(?:ness)?|efficacy|efficacious|research[- ]supported|useful in treat\w*|remission|response rate|relapse|"
     r"adverse (?:effects?|events?)|side effects?|recommended|first[- ]line|"
     r"uncertain|inconclusive|insufficient|no (?:significant )?(?:difference|effect)|"
     r"not differ|equivalent|most evidence)\b"
@@ -108,10 +108,12 @@ _COMPARATIVE_RESULT = re.compile(
 )
 _DIAGNOSIS_PROCESS = re.compile(
     r"\b(?:diagnosis (?:requires|involves|is based on)|"
+    r"panic disorder (?:may be|is) diagnosed when|"
+    r"to be diagnosed with panic disorder|"
     r"diagnostic criteria (?:include|require|specify)|"
     r"clinical (?:assessment|evaluation|interview)|"
     r"structured (?:clinical )?interview|"
-    r"recurrent unexpected panic attacks|"
+    r"recurrent (?:and )?unexpected panic attacks|"
     r"DSM[- ]?\d+|ICD[- ]?\d+|"
     r"rule out|ruling out|assess(?:ment|ing)? (?:of )?(?:symptoms|panic attacks))\b",
     re.I,
@@ -259,11 +261,30 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
     if isinstance(facets, dict):
         populations = facets.get("populations", [])
         if isinstance(populations, list):
-            evidence_populations.update(
+            facet_populations = {
                 value for value in populations
                 if isinstance(value, str)
-                and value in {"children_and_adolescents", "adults", "older_adults", "perinatal"}
+                and value in {
+                    "children_and_adolescents", "adults",
+                    "older_adults", "perinatal",
+                }
+            }
+            # In general-purpose government guidance (e.g. NIMH), the
+            # document-wide facet may mention both children AND adults in
+            # unrelated sections. That is not evidence that every unqualified
+            # psychotherapy recommendation is pediatric-only or adult-only.
+            # Preserve strict qualifications for trials, single-population
+            # sources, and any query naming a specific population.
+            broad_government_guidance = (
+                hit.chunk.evidence_level == EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+                and facet_populations == {"children_and_adolescents", "adults"}
+                and not requested_populations
+                and not extract_population_concepts(
+                    f"{hit.chunk.section_heading}\n{hit.chunk.text}"
+                )
             )
+            if not broad_government_guidance:
+                evidence_populations.update(facet_populations)
 
     eligible: list[str] = []
     for sentence in candidates:
@@ -313,6 +334,15 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
 
     def score(sentence: str) -> tuple[bool, float, int]:
         overlap = len(query_tokens & set(content_tokens(sentence))) / max(1, len(query_tokens))
+        if analysis.intent == QueryIntent.DIAGNOSIS:
+            # Prefer a self-contained diagnostic assessment statement over
+            # a shorter isolated criterion when both are available.
+            has_context = bool(re.search(
+                r"\b(?:worr(?:y|ying)|behavioral changes|behavioural changes|"
+                r"clinical assessment|physical exam|interfering with daily life)\b",
+                sentence, re.I,
+            ))
+            return has_context, overlap, -len(sentence)
         return requires_finding and bool(_RESULT_STATEMENT.search(sentence)), overlap, -len(sentence)
 
     return max(eligible, key=score) if query_tokens else eligible[0]

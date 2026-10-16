@@ -524,3 +524,190 @@ def test_real_gad_review_finding_is_still_eligible():
     payload = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
     assert payload.answer == f"- {finding} [S1]"
     assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(payload, rows).supported
+
+
+# Regression fixtures copied from the staged NIMH educational source text.
+# These are source-derived engineering tests, not clinician-adjudicated labels.
+def test_nimh_social_anxiety_generic_cbt_guidance_can_answer_p02():
+    question = "What does the evidence say about CBT for social anxiety disorder?"
+    finding = (
+        "Cognitive behavioral therapy (CBT), a research-supported type of "
+        "psychotherapy, is commonly used to treat social anxiety disorder."
+    )
+    rows = [hit(finding, title="Social Anxiety Disorder: What You Need to Know")]
+    rows[0].chunk.source_id = "nimh_social_anxiety"
+    rows[0].chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    rows[0].chunk.metadata["clinical_facets"] = {
+        "populations": ["adults", "children_and_adolescents"],
+    }
+    result = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+    assert result.answer == f"- {finding} [S1]"
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(result, rows).supported
+
+
+def test_document_wide_mixed_population_exception_never_applies_to_trials():
+    question = "What does the evidence say about CBT for social anxiety disorder?"
+    finding = (
+        "Cognitive behavioral therapy (CBT), a research-supported type of "
+        "psychotherapy, is commonly used to treat social anxiety disorder."
+    )
+    rows = [hit(finding, title="Mixed-age trial for social anxiety disorder")]
+    rows[0].chunk.evidence_level = EvidenceLevel.RANDOMIZED_CONTROLLED_TRIAL
+    rows[0].chunk.metadata["clinical_facets"] = {
+        "populations": ["adults", "children_and_adolescents"],
+    }
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+
+
+def test_nimh_general_guidance_does_not_answer_explicit_adult_only_question():
+    question = "What evidence supports CBT for adults with social anxiety disorder?"
+    finding = (
+        "Cognitive behavioral therapy (CBT), a research-supported type of "
+        "psychotherapy, is commonly used to treat social anxiety disorder."
+    )
+    rows = [hit(finding, title="Social Anxiety Disorder: What You Need to Know")]
+    rows[0].chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    rows[0].chunk.metadata["clinical_facets"] = {
+        "populations": ["adults", "children_and_adolescents"],
+    }
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+
+
+def test_nimh_panic_diagnosis_source_statement_can_answer_p07():
+    question = "How is panic disorder diagnosed?"
+    diagnosis = (
+        "Panic disorder may be diagnosed when a person experiences recurrent "
+        "and unexpected panic attacks, along with ongoing worry or behavioral "
+        "changes due to the fear of future attacks, often interfering with daily life."
+    )
+    rows = [hit(diagnosis, title="Panic Disorder: What You Need to Know")]
+    rows[0].chunk.source_id = "nimh_panic_disorder"
+    rows[0].chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    result = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+    assert result.answer == f"- {diagnosis} [S1]"
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(result, rows).supported
+
+
+def test_nimh_panic_diagnosis_does_not_accept_participant_eligibility():
+    question = "How is panic disorder diagnosed?"
+    rows = [hit(
+        "Participants with panic disorder were enrolled after meeting "
+        "diagnostic criteria.",
+        title="Panic disorder feasibility trial",
+    )]
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+
+
+def test_prefer_self_contained_panic_diagnosis_over_isolated_criterion():
+    question = "How is panic disorder diagnosed?"
+    criterion = (
+        "To be diagnosed with panic disorder, a person must experience "
+        "recurrent, unexpected panic attacks."
+    )
+    complete = (
+        "Panic disorder may be diagnosed when a person experiences recurrent "
+        "and unexpected panic attacks, along with ongoing worry or behavioral "
+        "changes due to the fear of future attacks, often interfering with daily life."
+    )
+    rows = [hit(criterion + " " + complete, title="Panic Disorder: What You Need to Know")]
+    rows[0].chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    result = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+    assert result.answer == f"- {complete} [S1]"
+
+
+
+def test_nimh_cbt_two_chunks_one_publication_prefers_explicitly_supported_evidence():
+    question = "What does the evidence say about CBT for social anxiety disorder?"
+    generic = (
+        "CBT delivered in a group therapy format also can offer unique "
+        "benefits for social anxiety disorder."
+    )
+    supported = (
+        "Cognitive behavioral therapy (CBT), a research-supported type of "
+        "psychotherapy, is commonly used to treat social anxiety disorder."
+    )
+    hits = [hit(generic, 1), hit(supported, 2)]
+    for row in hits:
+        row.chunk.document_id = "nimh-social-anxiety-single-publication"
+        row.chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+        row.chunk.metadata["clinical_facets"] = {
+            "populations": ["children_and_adolescents", "adults"],
+        }
+    payload = EvidenceOnlyGenerator().generate(
+        question, hits, retrieval(question, hits)
+    )
+    assert payload.answer == f"- {supported} [S2]"
+    assert payload.cited_source_ids == ["S2"]
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(
+        payload, hits
+    ).supported
+
+
+def test_nimh_panic_two_chunks_one_publication_prefers_complete_diagnostic_context(
+    settings,
+):
+    question = "How is panic disorder diagnosed?"
+    incomplete = (
+        "To be diagnosed with panic disorder, a person must experience "
+        "recurrent, unexpected panic attacks."
+    )
+    complete = (
+        "Panic disorder may be diagnosed when a person experiences recurrent "
+        "and unexpected panic attacks, along with ongoing worry or behavioral "
+        "changes due to the fear of future attacks, often interfering with daily life."
+    )
+    hits = [hit(incomplete, 1), hit(complete, 2)]
+    for row in hits:
+        row.chunk.document_id = "nimh-panic-single-publication"
+        row.chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    result = rag_for(settings, retrieval(question, hits)).answer(question)
+    assert not result.abstained
+    assert result.answer.startswith(f"- {complete} [S2]")
+    assert incomplete not in result.answer
+    assert "medication recommendation" not in result.answer
+    assert "not a diagnosis of an individual" in result.answer
+    assert [c.citation_id for c in result.citations] == ["S2"]
+    assert [c.chunk_id for c in result.citations] == ["chunk-2"]
+
+
+def test_two_independent_documents_with_distinct_findings_remain_two_citations():
+    question = "What does the evidence say about CBT for social anxiety disorder?"
+    hits = [
+        hit(
+            "Cognitive behavioral therapy (CBT), a research-supported "
+            "psychotherapy, is commonly used to treat social anxiety disorder.",
+            1,
+        ),
+        hit(
+            "CBT reduced social anxiety disorder symptoms compared with "
+            "a waiting-list control in the studied adult population.",
+            2,
+        ),
+    ]
+    payload = EvidenceOnlyGenerator().generate(
+        question, hits, retrieval(question, hits)
+    )
+    assert len(payload.cited_source_ids) == 2
+    assert payload.cited_source_ids == ["S1", "S2"]
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(
+        payload, hits
+    ).supported
+
+
+def test_medication_information_has_only_medication_disclaimer(settings):
+    question = "What do authoritative sources say about medication for anxiety?"
+    rows = [
+        hit(
+            "Antidepressant medications, such as selective serotonin "
+            "reuptake inhibitors (SSRIs), can also be useful in treating "
+            "adults with anxiety disorders."
+        )
+    ]
+    rows[0].chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    response = rag_for(settings, retrieval(question, rows)).answer(question)
+    assert not response.abstained
+    assert "not an individualized medication recommendation" in response.answer
+    assert "not a diagnosis of an individual" not in response.answer

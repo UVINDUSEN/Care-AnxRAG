@@ -215,13 +215,15 @@ class CareAnxRag:
                 "review publications; titles do not establish clinical "
                 "effectiveness or a treatment recommendation."
             )
-        if retrieval.query_analysis.intent in {
-            QueryIntent.DIAGNOSIS,
-            QueryIntent.MEDICATION,
-        }:
+        if retrieval.query_analysis.intent == QueryIntent.DIAGNOSIS:
             answer += (
-                "\n\nThis is general evidence-based information, not a diagnosis or "
-                "an individualized medication recommendation."
+                "\n\nThese are general diagnostic considerations, not a "
+                "diagnosis of an individual. Clinical assessment is required."
+            )
+        elif retrieval.query_analysis.intent == QueryIntent.MEDICATION:
+            answer += (
+                "\n\nThis is general evidence-based information, not an "
+                "individualized medication recommendation."
             )
 
         timings["total"] = self._elapsed_ms(total_started)
