@@ -97,6 +97,8 @@ class ClaimGroundingVerifier:
         self,
         payload: GeneratedPayload,
         hits: Sequence[SearchHit],
+        *,
+        allow_metadata_titles: bool = False,
     ) -> GroundingReport:
         extracted_claims = extract_claims(payload.answer)
         inline_citations = {
@@ -159,7 +161,11 @@ class ClaimGroundingVerifier:
 
                 checked_pairs += 1
                 source_text = re.sub(r"\s+([.!?,;:])", r"\1", normalize_whitespace(hit.chunk.text))
-                if normalized_claim not in source_text:
+                title_match = (
+                    allow_metadata_titles
+                    and normalized_claim.rstrip(". ") == normalize_whitespace(hit.chunk.title).rstrip(". ")
+                )
+                if normalized_claim not in source_text and not title_match:
                     failures.append(
                         GroundingFailure(
                             claim=claim.text,
