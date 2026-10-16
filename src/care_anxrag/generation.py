@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from .answer_selection import InsufficientAnswerEvidence, select_answer_sentence
 from .bibliography import is_review_discovery_query, review_title_is_relevant
-from .models import GeneratedPayload, RetrievalResult, SearchHit
+from .models import GeneratedPayload, QueryIntent, RetrievalResult, SearchHit
 from .query import QueryAnalyzer
 
 
@@ -60,10 +60,23 @@ class EvidenceOnlyGenerator:
                 uncertainty="Bibliographic matches only; no treatment efficacy conclusion.",
             )
 
+        # Several retrieved chunks can belong to one publication. Pick its
+        # most self-contained eligible sentence before building citations, so
+        # two paragraphs from NIMH are not presented as independent studies.
+        # Original source indices are retained for the verifier's S# mapping.
+        best_by_document: dict[str, tuple[int, str]] = {}
         for index, hit in enumerate(hits, start=1):
             excerpt = select_answer_sentence(hit, analysis)
             if excerpt is None:
                 continue
+            doc_id = hit.chunk.document_id
+            previous = best_by_document.get(doc_id)
+            if previous is None or self._sentence_priority(
+                excerpt, analysis.intent
+            ) > self._sentence_priority(previous[1], analysis.intent):
+                best_by_document[doc_id] = (index, excerpt)
+
+        for index, excerpt in list(best_by_document.values()):
             identity = " ".join(excerpt.split()).casefold()
             if identity in seen:
                 continue
@@ -82,6 +95,41 @@ class EvidenceOnlyGenerator:
             cited_source_ids=cited,
             uncertainty=None,
         )
+
+    @staticmethod
+    def _sentence_priority(sentence: str, intent: QueryIntent) -> int:
+        """Rank only already-eligible verbatim spans from ONE document.
+
+        This is a presentation preference, not a statement of clinical truth,
+        and never overrides retrieval thresholds or population safeguards.
+        """
+        if intent == QueryIntent.DIAGNOSIS:
+            has_context = bool(re.search(
+                r"\b(?:worr(?:y|ying)|behavioral changes|behavioural changes|"
+                r"behavior changes|behaviour changes|at least 1 month)\b",
+                sentence, re.I,
+            ))
+            mentions_disorder = bool(re.search(
+                r"\b(?:panic disorder|social anxiety disorder)\b",
+                sentence, re.I,
+            ))
+            return (4 if has_context and mentions_disorder else 0) + (
+                1 if re.search(r"\bdiagnos(?:is|ed|tic)\b", sentence, re.I) else 0
+            )
+        if intent == QueryIntent.TREATMENT:
+            if re.search(
+                r"\b(?:research[- ]supported|evidence[- ]based|"
+                r"first[- ]line)\b", sentence, re.I,
+            ):
+                return 3
+            if re.search(
+                r"\b(?:reduc(?:ed|es)|improv(?:ed|es)|effective(?:ness)?)\b",
+                sentence, re.I,
+            ):
+                return 2
+            if re.search(r"\bbenefits?\b", sentence, re.I):
+                return 1
+        return 0
 
     def ping(self) -> bool:
         return True
