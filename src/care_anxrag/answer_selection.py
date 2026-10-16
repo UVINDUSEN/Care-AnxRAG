@@ -228,7 +228,9 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
         part for part in source_sentences(hit.chunk.text)
         if not part.lstrip().startswith("#")
     ]
-    query_tokens = set(content_tokens(analysis.normalized_query))
+    # Use the synonym-enriched retrieval query so GAD and hyphenated
+    # clinical terms do not cause false-negative token overlap checks.
+    query_tokens = set(content_tokens(analysis.retrieval_query.replace('-', ' ')))
     asks_for_findings = bool(_EFFECTIVENESS_QUESTION.search(analysis.normalized_query)) or (
         "evidence" in query_tokens
         and not _DESCRIPTIVE_QUESTION.search(analysis.normalized_query)
