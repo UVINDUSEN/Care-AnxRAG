@@ -8,6 +8,7 @@ import httpx
 from pydantic import ValidationError
 
 from .answer_selection import InsufficientAnswerEvidence, select_answer_sentence
+from .bibliography import is_review_discovery_query, review_title_is_relevant
 from .models import GeneratedPayload, RetrievalResult, SearchHit
 from .query import QueryAnalyzer
 
@@ -36,6 +37,28 @@ class EvidenceOnlyGenerator:
         cited: list[str] = []
         seen: set[str] = set()
         analysis = QueryAnalyzer().analyze(question)
+
+        if is_review_discovery_query(analysis):
+            seen_documents: set[str] = set()
+            for index, hit in enumerate(hits, start=1):
+                if hit.chunk.document_id in seen_documents:
+                    continue
+                if not review_title_is_relevant(hit, analysis):
+                    continue
+                seen_documents.add(hit.chunk.document_id)
+                cited_id = f"S{index}"
+                # Verbatim indexed source title, never an efficacy conclusion.
+                sentences.append(f"- {hit.chunk.title} [{cited_id}]")
+                cited.append(cited_id)
+                if len(sentences) == 3:
+                    break
+            if not sentences:
+                raise InsufficientAnswerEvidence()
+            return GeneratedPayload(
+                answer="\n".join(sentences),
+                cited_source_ids=cited,
+                uncertainty="Bibliographic matches only; no treatment efficacy conclusion.",
+            )
 
         for index, hit in enumerate(hits, start=1):
             excerpt = select_answer_sentence(hit, analysis)
