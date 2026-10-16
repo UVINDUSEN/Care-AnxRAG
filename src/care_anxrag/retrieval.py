@@ -315,14 +315,7 @@ class CareRetriever:
         # non-answer background chunks. Preserve the original CARE order
         # within both partitions and never revive excluded/conflicted hits.
         if mode == "full":
-            answerable = []
-            other = []
-            for hit in eligible_hits:
-                if select_answer_sentence(hit, analysis) is not None:
-                    answerable.append(hit)
-                else:
-                    other.append(hit)
-            eligible_hits = answerable + other
+            eligible_hits = self._rank_by_answerability(eligible_hits, analysis)
         selected = self._diversify(
             eligible_hits,
             limit=self.settings.final_context_chunks,
@@ -685,6 +678,26 @@ class CareRetriever:
             + 0.12 * hit.freshness_score
             + 0.08 * hit.care_score
         )
+
+    @staticmethod
+    def _rank_by_answerability(
+        hits: Sequence[SearchHit],
+        analysis,
+    ) -> list[SearchHit]:
+        """Stable partition: answer-bearing, then non-answer evidence.
+
+        Call only AFTER relevance filtering and conflict exclusion. A sentence
+        must pass the existing citation-grounded question-specific selector.
+        This changes only presentation-candidate priority, not source scores.
+        """
+        answerable: list[SearchHit] = []
+        other: list[SearchHit] = []
+        for hit in hits:
+            if select_answer_sentence(hit, analysis) is not None:
+                answerable.append(hit)
+            else:
+                other.append(hit)
+        return answerable + other
 
     @staticmethod
     def _diversify(
