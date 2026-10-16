@@ -113,11 +113,14 @@ class CareAnxRag:
             )
 
             stage_started = perf_counter()
-            grounding = self.grounding.verify(
-                generated,
-                context_hits,
-                allow_metadata_titles=is_review_discovery_query(retrieval.query_analysis),
-            )
+            if is_review_discovery_query(retrieval.query_analysis):
+                grounding = self.grounding.verify(
+                    generated, context_hits, allow_metadata_titles=True
+                )
+            else:
+                # Keep the original strict verifier contract for all medical
+                # answer claims and existing validation integrations.
+                grounding = self.grounding.verify(generated, context_hits)
             timings["grounding"] = self._elapsed_ms(
                 stage_started
             )
