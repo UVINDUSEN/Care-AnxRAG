@@ -347,18 +347,6 @@ def test_clinician_queries_do_not_return_topical_non_answers(question, irrelevan
 ])
 def test_clinician_questions_can_select_direct_source_sentences(question, statement):
     rows = [hit(statement)]
-    from care_anxrag import answer_selection as sel
-    analysis = QueryAnalyzer().analyze(question)
-    print("DIAGNOSTIC", question, analysis.model_dump(),
-          "finding", bool(sel._FINDING.search(statement)),
-          "nonfinding", bool(sel._NON_FINDING.search(statement)),
-          "task", sel._requires_clinician_task_evidence(statement, rows[0], analysis),
-          "pop", sel.extract_population_concepts(statement),
-          "context", sel.supports_explicit_clinical_context(
-              analysis.anxiety_subtypes, analysis.treatments,
-              analysis.population, analysis.outcomes, analysis.comorbidities,
-              [], statement,
-          ))
     payload = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
     assert payload.answer == f"- {statement} [S1]"
     assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(payload, rows).supported
@@ -411,3 +399,9 @@ def test_authoritative_medication_query_excludes_unrelated_secondary_disease_rev
     who.chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
     generated = EvidenceOnlyGenerator().generate(question, [who], retrieval(question, [who]))
     assert generated.cited_source_ids == ["S1"]
+
+
+def test_gad_at_sentence_end_or_punctuation_is_detected_as_subtype():
+    assert "generalized_anxiety_disorder" in QueryAnalyzer().analyze(
+        "What evidence contradicts treatment for GAD?"
+    ).anxiety_subtypes
