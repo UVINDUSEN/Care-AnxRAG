@@ -53,7 +53,7 @@ _FINDING = re.compile(
     r"|\bevidence (?:supports?|suggests?)\b"
     r"|\bevidence[- ](?:based|supported) (?:treatments?|approaches?|interventions?|options?)\b"
     r"|\b(?:can|may) help\b"
-    r"|\b(?:can|may) (?:be )?(?:helpful|useful|beneficial)\b",
+    r"|\b(?:can|may) (?:also )?(?:be )?(?:helpful|useful|beneficial)\b",
     re.I,
 )
 _EFFECTIVENESS_QUESTION = re.compile(
