@@ -359,7 +359,7 @@ def test_comparison_requires_comparative_outcome_not_two_treatment_mentions():
         EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
 
 
-def test_recent_review_requires_relevant_treatment_finding_and_recent_review_level():
+def test_recent_review_discovery_requires_relevant_review_title_and_publication_date():
     from datetime import UTC, datetime
     from care_anxrag.models import EvidenceLevel
 
@@ -371,16 +371,31 @@ def test_recent_review_requires_relevant_treatment_finding_and_recent_review_lev
     biomarker.chunk.evidence_level = EvidenceLevel.SYSTEMATIC_REVIEW
     biomarker.chunk.published_at = datetime(2026, 7, 9, tzinfo=UTC)
     with pytest.raises(ValueError, match="insufficient_answer_evidence"):
-        EvidenceOnlyGenerator().generate(question, [biomarker], retrieval(question, [biomarker]))
+        EvidenceOnlyGenerator().generate(
+            question, [biomarker], retrieval(question, [biomarker])
+        )
 
+    title = "CBT treatment for anxiety disorders: a systematic review."
     therapy = hit(
         "CBT reduced symptom severity for adults with anxiety disorders "
-        "in the included studies."
+        "in the included studies.",
+        title=title,
     )
+    therapy.chunk.url = "https://pubmed.ncbi.nlm.nih.gov/12345678/"
     therapy.chunk.evidence_level = EvidenceLevel.SYSTEMATIC_REVIEW
     therapy.chunk.published_at = datetime(2026, 7, 9, tzinfo=UTC)
-    generated = EvidenceOnlyGenerator().generate(question, [therapy], retrieval(question, [therapy]))
+    generated = EvidenceOnlyGenerator().generate(
+        question, [therapy], retrieval(question, [therapy])
+    )
+    assert generated.answer == f"- {title} [S1]"
     assert generated.cited_source_ids == ["S1"]
+    # This is a SOURCE TITLE, not a claim that CBT works.
+    assert not ClaimGroundingVerifier(HeuristicNliClassifier()).verify(
+        generated, [therapy]
+    ).supported
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(
+        generated, [therapy], allow_metadata_titles=True
+    ).supported
 
 
 def test_authoritative_medication_query_excludes_unrelated_secondary_disease_reviews():

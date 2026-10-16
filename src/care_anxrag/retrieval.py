@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import Sequence
 
 from .answer_selection import select_answer_sentence
+from .bibliography import is_review_discovery_query, review_title_is_relevant
 from .clinical_match import (
     concept_set_compatibility,
     population_compatibility,
@@ -693,7 +694,11 @@ class CareRetriever:
         answerable: list[SearchHit] = []
         other: list[SearchHit] = []
         for hit in hits:
-            if select_answer_sentence(hit, analysis) is not None:
+            if (
+                review_title_is_relevant(hit, analysis)
+                if is_review_discovery_query(analysis)
+                else select_answer_sentence(hit, analysis) is not None
+            ):
                 answerable.append(hit)
             else:
                 other.append(hit)
