@@ -3,6 +3,7 @@ from __future__ import annotations
 from time import perf_counter
 
 from .answer_selection import InsufficientAnswerEvidence
+from .bibliography import is_review_discovery_query
 from .config import Settings
 from .generation import Generator
 from .grounding import ClaimGroundingVerifier
@@ -115,6 +116,7 @@ class CareAnxRag:
             grounding = self.grounding.verify(
                 generated,
                 context_hits,
+                allow_metadata_titles=is_review_discovery_query(retrieval.query_analysis),
             )
             timings["grounding"] = self._elapsed_ms(
                 stage_started
@@ -204,6 +206,12 @@ class CareAnxRag:
         answer = normalize_whitespace(
             generated.answer
         )
+        if is_review_discovery_query(retrieval.query_analysis):
+            answer += (
+                "\n\nBibliographic matches only. These citations identify "
+                "review publications; titles do not establish clinical "
+                "effectiveness or a treatment recommendation."
+            )
         if retrieval.query_analysis.intent in {
             QueryIntent.DIAGNOSIS,
             QueryIntent.MEDICATION,
