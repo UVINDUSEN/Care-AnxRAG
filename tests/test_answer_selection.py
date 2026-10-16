@@ -359,7 +359,7 @@ def test_comparison_requires_comparative_outcome_not_two_treatment_mentions():
         EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
 
 
-def test_recent_review_requires_relevant_treatment_finding_and_recent_review_level():
+def test_recent_review_discovery_requires_relevant_review_title_and_publication_date():
     from datetime import UTC, datetime
     from care_anxrag.models import EvidenceLevel
 
@@ -371,16 +371,31 @@ def test_recent_review_requires_relevant_treatment_finding_and_recent_review_lev
     biomarker.chunk.evidence_level = EvidenceLevel.SYSTEMATIC_REVIEW
     biomarker.chunk.published_at = datetime(2026, 7, 9, tzinfo=UTC)
     with pytest.raises(ValueError, match="insufficient_answer_evidence"):
-        EvidenceOnlyGenerator().generate(question, [biomarker], retrieval(question, [biomarker]))
+        EvidenceOnlyGenerator().generate(
+            question, [biomarker], retrieval(question, [biomarker])
+        )
 
+    title = "CBT treatment for anxiety disorders: a systematic review."
     therapy = hit(
         "CBT reduced symptom severity for adults with anxiety disorders "
-        "in the included studies."
+        "in the included studies.",
+        title=title,
     )
+    therapy.chunk.url = "https://pubmed.ncbi.nlm.nih.gov/12345678/"
     therapy.chunk.evidence_level = EvidenceLevel.SYSTEMATIC_REVIEW
     therapy.chunk.published_at = datetime(2026, 7, 9, tzinfo=UTC)
-    generated = EvidenceOnlyGenerator().generate(question, [therapy], retrieval(question, [therapy]))
+    generated = EvidenceOnlyGenerator().generate(
+        question, [therapy], retrieval(question, [therapy])
+    )
+    assert generated.answer == f"- {title} [S1]"
     assert generated.cited_source_ids == ["S1"]
+    # This is a SOURCE TITLE, not a claim that CBT works.
+    assert not ClaimGroundingVerifier(HeuristicNliClassifier()).verify(
+        generated, [therapy]
+    ).supported
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(
+        generated, [therapy], allow_metadata_titles=True
+    ).supported
 
 
 def test_authoritative_medication_query_excludes_unrelated_secondary_disease_reviews():
@@ -405,3 +420,107 @@ def test_gad_at_sentence_end_or_punctuation_is_detected_as_subtype():
     assert "generalized_anxiety_disorder" in QueryAnalyzer().analyze(
         "What evidence contradicts treatment for GAD?"
     ).anxiety_subtypes
+
+
+def test_seventh_chunk_with_relevant_treatment_result_becomes_first():
+    from care_anxrag.retrieval import CareRetriever
+    question = "What treatments are supported for generalized anxiety disorder?"
+    background = [
+        hit("Generalized anxiety disorder involves excessive worry and distress.", i)
+        for i in range(1, 7)
+    ]
+    supported = hit(
+        "CBT reduced anxiety symptoms in adults with generalized anxiety disorder.", 7
+    )
+    analysis = QueryAnalyzer().analyze(question)
+    reordered = CareRetriever._rank_by_answerability(background + [supported], analysis)
+    assert reordered[0].chunk.chunk_id == supported.chunk.chunk_id
+    six = CareRetriever._diversify(reordered, limit=6, max_per_document=2)
+    generated = EvidenceOnlyGenerator().generate(question, six, retrieval(question, six))
+    assert generated.answer == (
+        "- CBT reduced anxiety symptoms in adults with generalized anxiety disorder. [S1]"
+    )
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(generated, six).supported
+
+
+def test_answerability_ranking_rejects_research_gap_as_contradiction():
+    from care_anxrag.retrieval import CareRetriever
+    question = "What evidence contradicts an intervention recommendation for GAD?"
+    gap = hit(
+        "There is a lack of research exploring online check-ins for GAD.", 1
+    )
+    finding = hit(
+        "CBT did not reduce anxiety symptoms in adults with generalized anxiety disorder.", 2
+    )
+    reordered = CareRetriever._rank_by_answerability(
+        [gap, finding], QueryAnalyzer().analyze(question)
+    )
+    assert [x.chunk.chunk_id for x in reordered] == ["chunk-2", "chunk-1"]
+
+
+def test_answerability_ranking_preserves_abstention_if_no_direct_evidence():
+    from care_anxrag.retrieval import CareRetriever
+    question = "How is panic disorder diagnosed?"
+    background = [
+        hit("Panic disorder causes significant distress.", 1),
+        hit("CBT is an effective treatment for panic disorder.", 2),
+    ]
+    reordered = CareRetriever._rank_by_answerability(
+        background, QueryAnalyzer().analyze(question)
+    )
+    assert [x.chunk.chunk_id for x in reordered] == ["chunk-1", "chunk-2"]
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, reordered, retrieval(question, reordered))
+
+
+# Diagnostics from 2026-10-16 real corpus: these statements previously
+# passed heuristic eligibility despite answering none of the clinician tasks.
+@pytest.mark.parametrize("question,title,nonanswer", [
+    (
+        "What treatments are supported for generalized anxiety disorder?",
+        "Comparing the Efficacy of Electronically Delivered CBT for GAD",
+        "Comparing the Effectiveness of Electronically Delivered Therapy "
+        "(e-CBT) to Weekly Online Mental Health Check-ins for Generalized "
+        "Anxiety Disorder-A Randomized Controlled Trial.",
+    ),
+    (
+        "What recent systematic reviews address anxiety-disorder treatment?",
+        "EVIDENCE-BASED PHARMACOTHERAPY FOR ANXIETY DISORDERS: A SYSTEMATIC REVIEW",
+        "To evaluate the efficacy, safety, and tolerability of pharmacological "
+        "interventions for anxiety outcomes in adults with post-traumatic "
+        "stress disorder (PTSD), including comorbid anxiety disorders.",
+    ),
+    (
+        "How is panic disorder diagnosed?",
+        "A feasibility trial for panic disorder in adolescents",
+        "Thirty-four young people meeting diagnostic criteria for panic disorder "
+        "were randomly allocated to cognitive therapy or CBT.",
+    ),
+])
+def test_real_corpus_title_objective_and_trial_allocation_are_not_answers(
+    question, title, nonanswer,
+):
+    rows = [hit(nonanswer, title=title)]
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+
+
+def test_matching_source_title_alone_is_not_a_clinical_finding():
+    question = "What treatments are supported for generalized anxiety disorder?"
+    title = "CBT effectiveness for generalized anxiety disorder."
+    rows = [hit(title, title=title)]
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+
+
+def test_real_gad_review_finding_is_still_eligible():
+    question = "What treatments are supported for generalized anxiety disorder?"
+    finding = (
+        "Our review confirms the usefulness of long-term pharmacological "
+        "treatments for PD and GAD and suggests that they can provide further "
+        "improvement over that obtained during short-term therapy."
+    )
+    rows = [hit(finding)]
+    payload = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+    assert payload.answer == f"- {finding} [S1]"
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(payload, rows).supported
