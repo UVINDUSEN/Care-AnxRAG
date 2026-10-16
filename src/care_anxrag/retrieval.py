@@ -7,6 +7,7 @@ from datetime import datetime
 from time import perf_counter
 from typing import Sequence
 
+from .answer_selection import select_answer_sentence
 from .clinical_match import (
     concept_set_compatibility,
     population_compatibility,
@@ -303,12 +304,27 @@ class CareRetriever:
             )
 
         stage_started = perf_counter()
+        eligible_hits = [
+            hit
+            for hit in relevant_hits
+            if not hit.excluded_due_to_conflict
+        ]
+        # Ranking measures topical relevance, whereas extraction needs a
+        # question-answering sentence. A lower-ranked, threshold-passing
+        # clinical finding must not be hidden behind six high-ranked but
+        # non-answer background chunks. Preserve the original CARE order
+        # within both partitions and never revive excluded/conflicted hits.
+        if mode == "full":
+            answerable = []
+            other = []
+            for hit in eligible_hits:
+                if select_answer_sentence(hit, analysis) is not None:
+                    answerable.append(hit)
+                else:
+                    other.append(hit)
+            eligible_hits = answerable + other
         selected = self._diversify(
-            [
-                hit
-                for hit in relevant_hits
-                if not hit.excluded_due_to_conflict
-            ],
+            eligible_hits,
             limit=self.settings.final_context_chunks,
             max_per_document=2,
         )
