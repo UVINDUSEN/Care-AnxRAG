@@ -14,6 +14,13 @@ from .clinical_match import (
     supports_explicit_clinical_context,
 )
 from .models import QueryAnalysis, QueryIntent, SearchHit
+from .question_requirements import (
+    eligible_document_for_question,
+    is_comparison_request,
+    is_conflict_request,
+    is_diagnosis_request,
+    is_treatment_review_request,
+)
 from .util import content_tokens, source_sentences
 
 
@@ -45,7 +52,8 @@ _FINDING = re.compile(
     r"not differ|equivalent|most evidence)\b"
     r"|\bevidence (?:supports?|suggests?)\b"
     r"|\bevidence[- ](?:based|supported) (?:treatments?|approaches?|interventions?|options?)\b"
-    r"|\b(?:can|may) help\b",
+    r"|\b(?:can|may) help\b"
+    r"|\b(?:can|may) (?:also )?(?:be )?(?:helpful|useful|beneficial)\b",
     re.I,
 )
 _EFFECTIVENESS_QUESTION = re.compile(
@@ -55,6 +63,26 @@ _EFFECTIVENESS_QUESTION = re.compile(
     re.I,
 )
 _DESCRIPTIVE_QUESTION = re.compile(r"\b(?:discussed|mentioned|listed|delivered|offered|used)\b", re.I)
+_DIRECT_DIAGNOSIS = re.compile(
+    r"\b(?:diagnostic criteria|diagnos(?:is|ed|ing) (?:requires|is based on|by|when)|"
+    r"clinical (?:assessment|interview|evaluation)|"
+    r"DSM[- ]?5(?:[- ]TR)?|ICD[- ]?1[01]|"
+    r"recurrent unexpected panic attacks|"
+    r"persistent (?:concern|worry) about (?:additional|future) panic attacks)\b",
+    re.I,
+)
+_MEDICATION_MENTION = re.compile(
+    r"\b(?:medication|medicine|pharmacolog\w*|antidepressants?|"
+    r"SSRIs?|SNRIs?|selective serotonin reuptake inhibitors?|"
+    r"benzodiazepines?|tricyclic antidepressants?|azapirones?)\b",
+    re.I,
+)
+_COMPARATIVE_FINDING = re.compile(
+    r"\b(?:compar(?:ed|ison) (?:with|to|between)|versus|vs\.?|"
+    r"relative to|difference(?:s)? between|more effective than|"
+    r"less effective than|superior to|inferior to|non[- ]inferior)\b",
+    re.I,
+)
 _RESULT_STATEMENT = re.compile(
     r"\b(?:reduced|improved|benefited|found|observed|showed|results)\b"
     r"|\b(?:did not|had no effect|no (?:significant )?difference|"
@@ -71,7 +99,7 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
     must be supported by the sentence itself, not borrowed from another sentence.
     Known population scope must remain in the selected text; otherwise omit it.
     """
-    if hit.excluded_due_to_conflict:
+    if hit.excluded_due_to_conflict or not eligible_document_for_question(hit, analysis):
         return None
 
     candidates = [
@@ -89,7 +117,7 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
     ) or (
         bool(analysis.treatments)
         and analysis.intent == QueryIntent.RECENT_RESEARCH
-    )
+    ) or is_treatment_review_request(analysis)
     evidence_populations = extract_population_concepts(
         f"{hit.chunk.title}\n{hit.chunk.text}"
     )
@@ -109,6 +137,22 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
     eligible: list[str] = []
     for sentence in candidates:
         if _NON_FINDING.search(sentence):
+            continue
+        # Independent question-type gates: an on-topic introduction, a study
+        # objective or a method is not a clinician-ready answer.
+        if is_diagnosis_request(analysis) and not _DIRECT_DIAGNOSIS.search(sentence):
+            continue
+        if analysis.intent == QueryIntent.MEDICATION and not (
+            _MEDICATION_MENTION.search(sentence) and _FINDING.search(sentence)
+        ):
+            continue
+        if is_treatment_review_request(analysis) and not _FINDING.search(sentence):
+            continue
+        if is_comparison_request(analysis.normalized_query) and not (
+            _COMPARATIVE_FINDING.search(sentence) and _FINDING.search(sentence)
+        ):
+            continue
+        if is_conflict_request(analysis.normalized_query) and not _FINDING.search(sentence):
             continue
         # Descriptive queries may list or identify an intervention without
         # claiming effectiveness. All other treatment queries require a

@@ -8,7 +8,8 @@ import httpx
 from pydantic import ValidationError
 
 from .answer_selection import InsufficientAnswerEvidence, select_answer_sentence
-from .models import GeneratedPayload, RetrievalResult, SearchHit
+from .models import GeneratedPayload, RelationLabel, RetrievalResult, SearchHit
+from .question_requirements import is_conflict_request
 from .query import QueryAnalyzer
 
 
@@ -35,9 +36,42 @@ class EvidenceOnlyGenerator:
         sentences: list[str] = []
         cited: list[str] = []
         seen: set[str] = set()
+
         analysis = QueryAnalyzer().analyze(question)
 
+        # A psychiatrist asking about conflicting findings must not receive
+        # unrelated limitations or study aims labelled as a contradiction.
+        # Require an explicit NLI contradictory relation between two distinct
+        # retained documents, plus eligible findings from BOTH sources.
+        allowed_conflict_indices: set[int] | None = None
+        if is_conflict_request(question):
+            by_chunk = {
+                hit.chunk.chunk_id: (i, hit)
+                for i, hit in enumerate(hits, start=1)
+            }
+            for relation in retrieval.relations:
+                if (relation.label != RelationLabel.CONTRADICTION
+                    or relation.confidence < 0.72):
+                    continue
+                left = by_chunk.get(relation.left_chunk_id)
+                right = by_chunk.get(relation.right_chunk_id)
+                if not left or not right:
+                    continue
+                if left[1].chunk.document_id == right[1].chunk.document_id:
+                    continue
+                if (left[1].excluded_due_to_conflict
+                    or right[1].excluded_due_to_conflict):
+                    continue
+                if (select_answer_sentence(left[1], analysis) is not None
+                    and select_answer_sentence(right[1], analysis) is not None):
+                    allowed_conflict_indices = {left[0], right[0]}
+                    break
+            if allowed_conflict_indices is None:
+                raise InsufficientAnswerEvidence()
+
         for index, hit in enumerate(hits, start=1):
+            if allowed_conflict_indices is not None and index not in allowed_conflict_indices:
+                continue
             excerpt = select_answer_sentence(hit, analysis)
             if excerpt is None:
                 continue
