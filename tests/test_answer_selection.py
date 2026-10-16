@@ -405,3 +405,54 @@ def test_gad_at_sentence_end_or_punctuation_is_detected_as_subtype():
     assert "generalized_anxiety_disorder" in QueryAnalyzer().analyze(
         "What evidence contradicts treatment for GAD?"
     ).anxiety_subtypes
+
+
+def test_seventh_chunk_with_relevant_treatment_result_becomes_first():
+    from care_anxrag.retrieval import CareRetriever
+    question = "What treatments are supported for generalized anxiety disorder?"
+    background = [
+        hit("Generalized anxiety disorder involves excessive worry and distress.", i)
+        for i in range(1, 7)
+    ]
+    supported = hit(
+        "CBT reduced anxiety symptoms in adults with generalized anxiety disorder.", 7
+    )
+    analysis = QueryAnalyzer().analyze(question)
+    reordered = CareRetriever._rank_by_answerability(background + [supported], analysis)
+    assert reordered[0].chunk.chunk_id == supported.chunk.chunk_id
+    six = CareRetriever._diversify(reordered, limit=6, max_per_document=2)
+    generated = EvidenceOnlyGenerator().generate(question, six, retrieval(question, six))
+    assert generated.answer == (
+        "- CBT reduced anxiety symptoms in adults with generalized anxiety disorder. [S1]"
+    )
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(generated, six).supported
+
+
+def test_answerability_ranking_rejects_research_gap_as_contradiction():
+    from care_anxrag.retrieval import CareRetriever
+    question = "What evidence contradicts an intervention recommendation for GAD?"
+    gap = hit(
+        "There is a lack of research exploring online check-ins for GAD.", 1
+    )
+    finding = hit(
+        "CBT did not reduce anxiety symptoms in adults with generalized anxiety disorder.", 2
+    )
+    reordered = CareRetriever._rank_by_answerability(
+        [gap, finding], QueryAnalyzer().analyze(question)
+    )
+    assert [x.chunk.chunk_id for x in reordered] == ["chunk-2", "chunk-1"]
+
+
+def test_answerability_ranking_preserves_abstention_if_no_direct_evidence():
+    from care_anxrag.retrieval import CareRetriever
+    question = "How is panic disorder diagnosed?"
+    background = [
+        hit("Panic disorder causes significant distress.", 1),
+        hit("CBT is an effective treatment for panic disorder.", 2),
+    ]
+    reordered = CareRetriever._rank_by_answerability(
+        background, QueryAnalyzer().analyze(question)
+    )
+    assert [x.chunk.chunk_id for x in reordered] == ["chunk-1", "chunk-2"]
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, reordered, retrieval(question, reordered))
