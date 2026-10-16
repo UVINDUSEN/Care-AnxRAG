@@ -524,3 +524,95 @@ def test_real_gad_review_finding_is_still_eligible():
     payload = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
     assert payload.answer == f"- {finding} [S1]"
     assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(payload, rows).supported
+
+
+# Regression fixtures copied from the staged NIMH educational source text.
+# These are source-derived engineering tests, not clinician-adjudicated labels.
+def test_nimh_social_anxiety_generic_cbt_guidance_can_answer_p02():
+    question = "What does the evidence say about CBT for social anxiety disorder?"
+    finding = (
+        "Cognitive behavioral therapy (CBT), a research-supported type of "
+        "psychotherapy, is commonly used to treat social anxiety disorder."
+    )
+    rows = [hit(finding, title="Social Anxiety Disorder: What You Need to Know")]
+    rows[0].chunk.source_id = "nimh_social_anxiety"
+    rows[0].chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    rows[0].chunk.metadata["clinical_facets"] = {
+        "populations": ["adults", "children_and_adolescents"],
+    }
+    result = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+    assert result.answer == f"- {finding} [S1]"
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(result, rows).supported
+
+
+def test_document_wide_mixed_population_exception_never_applies_to_trials():
+    question = "What does the evidence say about CBT for social anxiety disorder?"
+    finding = (
+        "Cognitive behavioral therapy (CBT), a research-supported type of "
+        "psychotherapy, is commonly used to treat social anxiety disorder."
+    )
+    rows = [hit(finding, title="Mixed-age trial for social anxiety disorder")]
+    rows[0].chunk.evidence_level = EvidenceLevel.RANDOMIZED_CONTROLLED_TRIAL
+    rows[0].chunk.metadata["clinical_facets"] = {
+        "populations": ["adults", "children_and_adolescents"],
+    }
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+
+
+def test_nimh_general_guidance_does_not_answer_explicit_adult_only_question():
+    question = "What evidence supports CBT for adults with social anxiety disorder?"
+    finding = (
+        "Cognitive behavioral therapy (CBT), a research-supported type of "
+        "psychotherapy, is commonly used to treat social anxiety disorder."
+    )
+    rows = [hit(finding, title="Social Anxiety Disorder: What You Need to Know")]
+    rows[0].chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    rows[0].chunk.metadata["clinical_facets"] = {
+        "populations": ["adults", "children_and_adolescents"],
+    }
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+
+
+def test_nimh_panic_diagnosis_source_statement_can_answer_p07():
+    question = "How is panic disorder diagnosed?"
+    diagnosis = (
+        "Panic disorder may be diagnosed when a person experiences recurrent "
+        "and unexpected panic attacks, along with ongoing worry or behavioral "
+        "changes due to the fear of future attacks, often interfering with daily life."
+    )
+    rows = [hit(diagnosis, title="Panic Disorder: What You Need to Know")]
+    rows[0].chunk.source_id = "nimh_panic_disorder"
+    rows[0].chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    result = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+    assert result.answer == f"- {diagnosis} [S1]"
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(result, rows).supported
+
+
+def test_nimh_panic_diagnosis_does_not_accept_participant_eligibility():
+    question = "How is panic disorder diagnosed?"
+    rows = [hit(
+        "Participants with panic disorder were enrolled after meeting "
+        "diagnostic criteria.",
+        title="Panic disorder feasibility trial",
+    )]
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+
+
+def test_prefer_self_contained_panic_diagnosis_over_isolated_criterion():
+    question = "How is panic disorder diagnosed?"
+    criterion = (
+        "To be diagnosed with panic disorder, a person must experience "
+        "recurrent, unexpected panic attacks."
+    )
+    complete = (
+        "Panic disorder may be diagnosed when a person experiences recurrent "
+        "and unexpected panic attacks, along with ongoing worry or behavioral "
+        "changes due to the fear of future attacks, often interfering with daily life."
+    )
+    rows = [hit(criterion + " " + complete, title="Panic Disorder: What You Need to Know")]
+    rows[0].chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    result = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+    assert result.answer == f"- {complete} [S1]"
