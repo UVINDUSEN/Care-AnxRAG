@@ -107,7 +107,8 @@ _COMPARATIVE_RESULT = re.compile(
     r"equally effective)\b", re.I
 )
 _DIAGNOSIS_PROCESS = re.compile(
-    r"\b(?:diagnos(?:tic|is|ed) (?:criteria|requires|involves|is based|based)|"
+    r"\b(?:diagnosis (?:requires|involves|is based on)|"
+    r"diagnostic criteria (?:include|require|specify)|"
     r"clinical (?:assessment|evaluation|interview)|"
     r"structured (?:clinical )?interview|"
     r"recurrent unexpected panic attacks|"
@@ -120,7 +121,9 @@ _NON_ANSWER_METHOD = re.compile(
     r"we (?:searched|conducted|performed)|"
     r"this (?:study|review) (?:aims|aimed|investigated)|"
     r"(?:electronic |bibliographic )?databases?:|"
-    r"study protocol)\b",
+    r"study protocol|meeting diagnostic criteria|randomly allocated)\b"
+    r"|^(?:to (?:evaluate|assess|investigate|compare|explore|determine|examine)\b"
+    r"|comparing the (?:effectiveness|efficacy|safety)\b)",
     re.I,
 )
 _DISORDER_TREATMENT = re.compile(
@@ -142,6 +145,10 @@ def _requires_clinician_task_evidence(
     question = analysis.normalized_query
 
     if _NON_ANSWER_METHOD.search(sentence):
+        return False
+    # An article's heading/title is a topic label, not evidence that the
+    # intervention worked or that diagnostic criteria were established.
+    if sentence.casefold().strip(" .:;") == hit.chunk.title.casefold().strip(" .:;"):
         return False
 
     review_request = bool(_REVIEW_REQUEST.search(question))
