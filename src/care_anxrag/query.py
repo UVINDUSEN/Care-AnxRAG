@@ -76,6 +76,12 @@ class QueryAnalyzer:
         if re.search(r"\bgad\b", normalized):
             retrieval_terms.append("generalized anxiety disorder")
 
+        # PubMed abstracts use both disorder name and the established synonym.
+        if re.search(r"\bsocial anxiety disorder\b", normalized):
+            retrieval_terms.append("social phobia")
+        elif re.search(r"\bsocial phobia\b", normalized):
+            retrieval_terms.append("social anxiety disorder")
+
         retrieval_query = normalize_whitespace(
             " ".join(dict.fromkeys(retrieval_terms))
         )
