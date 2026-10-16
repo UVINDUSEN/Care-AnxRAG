@@ -7,13 +7,14 @@ correctness classifier. Retrieval quality and exact-source grounding still apply
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime, timedelta
 
 from .clinical_match import (
     extract_population_concepts,
     extract_subtype_concepts,
     supports_explicit_clinical_context,
 )
-from .models import QueryAnalysis, QueryIntent, SearchHit
+from .models import EvidenceLevel, QueryAnalysis, QueryIntent, SearchHit
 from .util import content_tokens, source_sentences
 
 
@@ -39,7 +40,7 @@ _NON_FINDING = re.compile(
 )
 _FINDING = re.compile(
     r"\b(?:reduc(?:e[sd]?|ing|tion)|improv(?:e[sd]?|ing|ement)|benefit(?:s|ed)?|"
-    r"effective(?:ness)?|efficacy|efficacious|remission|response rate|relapse|"
+    r"effective(?:ness)?|efficacy|efficacious|useful in treat\w*|remission|response rate|relapse|"
     r"adverse (?:effects?|events?)|side effects?|recommended|first[- ]line|"
     r"uncertain|inconclusive|insufficient|no (?:significant )?(?:difference|effect)|"
     r"not differ|equivalent|most evidence)\b"
@@ -63,6 +64,155 @@ _RESULT_STATEMENT = re.compile(
 )
 
 
+
+# Professional evidence questions require a *response to the requested task*,
+# not merely a relevant paper or an exact citation. These conservative guards
+# may abstain: they cannot establish clinical validity or evaluate study quality.
+_INTERVENTION = re.compile(
+    r"\b(?:CBT|cognitive[- ]behaviou?ral therap(?:y|ies)|"
+    r"exposure[- ](?:based )?(?:therapy|treatment)|metacognitive therap(?:y|ies)|"
+    r"psychotherap(?:y|ies)|psychological therap(?:y|ies)|"
+    r"pharmacolog(?:y|ical)|antidepressants?|SSRIs?|SNRIs?|"
+    r"benzodiazepines?|sertraline|escitalopram|"
+    r"repetitive transcranial magnetic stimulation|rTMS|tDCS|"
+    r"mindfulness[- ]based (?:therapy|intervention)|"
+    r"interventions? (?:for|to treat) anxiety disorders?)\b",
+    re.I,
+)
+_REVIEW_REQUEST = re.compile(
+    r"\b(?:systematic reviews?|meta[- ]analys(?:es|is))\b", re.I
+)
+_AUTHORITATIVE_REQUEST = re.compile(
+    r"\b(?:authoritative|official|guidelines?|recommendations?)\b", re.I
+)
+_CONTRADICTION_REQUEST = re.compile(
+    r"\b(?:contradict(?:s|ions?|ory)?|conflict(?:s|ing)?|"
+    r"disagree(?:s|ment)?|inconsistent|opposing)\b", re.I
+)
+_NEGATIVE_TREATMENT_RESULT = re.compile(
+    r"\b(?:did not (?:reduc\w*|improv\w*|benefit)|"
+    r"no (?:statistically )?(?:significant )?(?:difference|benefit|effect)|"
+    r"not effective|not superior|inferior to|"
+    r"failed to (?:reduc\w*|improv\w*|show)|"
+    r"contradictory findings|conflicting (?:results|evidence)|"
+    r"inconsistent (?:results|findings|evidence))\b",
+    re.I,
+)
+_COMPARISON_REQUEST = re.compile(
+    r"\b(?:compar(?:e|es|ed|ing|ison|ative)|versus|vs\.?)\b", re.I
+)
+_COMPARATIVE_RESULT = re.compile(
+    r"\b(?:compared (?:with|to)|versus|vs\.?|relative to|"
+    r"superior|inferior|equivalent|no (?:significant )?difference|"
+    r"equally effective)\b", re.I
+)
+_DIAGNOSIS_PROCESS = re.compile(
+    r"\b(?:diagnos(?:tic|is|ed) (?:criteria|requires|involves|is based|based)|"
+    r"clinical (?:assessment|evaluation|interview)|"
+    r"structured (?:clinical )?interview|"
+    r"recurrent unexpected panic attacks|"
+    r"DSM[- ]?\d+|ICD[- ]?\d+|"
+    r"rule out|ruling out|assess(?:ment|ing)? (?:of )?(?:symptoms|panic attacks))\b",
+    re.I,
+)
+_NON_ANSWER_METHOD = re.compile(
+    r"\b(?:the following sources were used|databases? (?:were|was) searched|"
+    r"we (?:searched|conducted|performed)|"
+    r"this (?:study|review) (?:aims|aimed|investigated)|"
+    r"(?:electronic |bibliographic )?databases?:|"
+    r"study protocol)\b",
+    re.I,
+)
+_DISORDER_TREATMENT = re.compile(
+    r"\b(?:anxiety disorders?|"
+    r"generaliz(?:ed|ised) anxiety disorder|panic disorder|social anxiety disorder|"
+    r"agoraphobia|specific phobia)\b",
+    re.I,
+)
+
+
+def _requires_clinician_task_evidence(
+    sentence: str, hit: SearchHit, analysis: QueryAnalysis,
+) -> bool:
+    """Require the sentence to address a clinician's requested evidence task.
+
+    This supplements (but does not replace) source-substring grounding and the
+    population/subtype safeguards. False negatives are preferred to false claims.
+    """
+    question = analysis.normalized_query
+
+    if _NON_ANSWER_METHOD.search(sentence):
+        return False
+
+    review_request = bool(_REVIEW_REQUEST.search(question))
+    if review_request:
+        if hit.chunk.evidence_level not in {
+            EvidenceLevel.SYSTEMATIC_REVIEW,
+            EvidenceLevel.META_ANALYSIS,
+        }:
+            return False
+        if analysis.wants_recent:
+            published = hit.chunk.published_at
+            if published is None:
+                return False
+            # A documented operator definition for "recent": last 3 years.
+            if published.date() < (datetime.now(UTC) - timedelta(days=3 * 365)).date():
+                return False
+        # A methodology sentence or a review of generic anxiety outcomes
+        # (such as biomarkers) does not answer anxiety-disorder *treatment*.
+        if re.search(r"\b(?:treatments?|interventions?)\b", question):
+            if not (
+                _DISORDER_TREATMENT.search(sentence)
+                and _INTERVENTION.search(sentence)
+                and _FINDING.search(sentence)
+            ):
+                return False
+
+    if (
+        analysis.intent == QueryIntent.MEDICATION
+        and _AUTHORITATIVE_REQUEST.search(question)
+        and hit.chunk.evidence_level not in {
+            EvidenceLevel.CLINICAL_GUIDELINE,
+            EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION,
+        }
+    ):
+        return False
+
+    if analysis.intent == QueryIntent.MEDICATION:
+        if not (_INTERVENTION.search(sentence) and _FINDING.search(sentence)):
+            return False
+
+    if analysis.intent == QueryIntent.TREATMENT:
+        # Background prevalence and symptom descriptions cannot satisfy a
+        # question asking what interventions are supported.
+        if (
+            _EFFECTIVENESS_QUESTION.search(question)
+            and not (_INTERVENTION.search(sentence) and _FINDING.search(sentence))
+        ):
+            return False
+        if (
+            _COMPARISON_REQUEST.search(question)
+            and len(analysis.treatments) >= 2
+            and not (_COMPARATIVE_RESULT.search(sentence) and _FINDING.search(sentence))
+        ):
+            return False
+
+    if _CONTRADICTION_REQUEST.search(question):
+        # This only selects explicit negative comparative findings; a research
+        # gap, a study aim, or a generic "however" is not contradictory evidence.
+        if not (
+            _NEGATIVE_TREATMENT_RESULT.search(sentence)
+            and _INTERVENTION.search(sentence)
+        ):
+            return False
+
+    if analysis.intent == QueryIntent.DIAGNOSIS:
+        if re.search(r"\bhow\b.*\bdiagnos(?:e|ed|is)\b", question):
+            if not _DIAGNOSIS_PROCESS.search(sentence):
+                return False
+
+    return True
+
 def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | None:
     """Return an eligible source sentence, retaining its wording and scope.
 
@@ -78,7 +228,9 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
         part for part in source_sentences(hit.chunk.text)
         if not part.lstrip().startswith("#")
     ]
-    query_tokens = set(content_tokens(analysis.normalized_query))
+    # Use the synonym-enriched retrieval query so GAD and hyphenated
+    # clinical terms do not cause false-negative token overlap checks.
+    query_tokens = set(content_tokens(analysis.retrieval_query.replace('-', ' ')))
     asks_for_findings = bool(_EFFECTIVENESS_QUESTION.search(analysis.normalized_query)) or (
         "evidence" in query_tokens
         and not _DESCRIPTIVE_QUESTION.search(analysis.normalized_query)
@@ -109,6 +261,8 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
     eligible: list[str] = []
     for sentence in candidates:
         if _NON_FINDING.search(sentence):
+            continue
+        if not _requires_clinician_task_evidence(sentence, hit, analysis):
             continue
         # Descriptive queries may list or identify an intervention without
         # claiming effectiveness. All other treatment queries require a

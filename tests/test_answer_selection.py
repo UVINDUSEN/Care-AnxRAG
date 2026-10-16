@@ -282,3 +282,126 @@ def test_existing_unresolved_conflict_abstention_is_preserved(settings):
     assert result.abstained
     assert result.abstention_reason == "unresolved_high_confidence_evidence_conflict"
     assert result.citations == []
+
+
+# ---------------------------------------------------------------------------
+# Viva regressions: question-directed factuality vs merely topical citations.
+# Synthetic engineering examples; no clinician-reviewed labels or outcomes.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("question,irrelevant", [
+    (
+        "What treatments are supported for generalized anxiety disorder?",
+        "Generalized anxiety disorder (GAD) is a prevalent anxiety disorder "
+        "characterized by uncontrollable worry, muscle tension, and irritability.",
+    ),
+    (
+        "What treatments are supported for generalized anxiety disorder?",
+        "Generalized anxiety disorder (GAD) has important implications "
+        "for patients and healthcare resources.",
+    ),
+    (
+        "How is panic disorder diagnosed?",
+        "Panic disorder occurs in 1-3% of adolescents and may persist.",
+    ),
+    (
+        "How is panic disorder diagnosed?",
+        "Cognitive behavioral therapy (CBT) is efficacious for panic disorder.",
+    ),
+    (
+        "What evidence contradicts an intervention recommendation for GAD?",
+        "However, there is a lack of research exploring online check-ins for GAD.",
+    ),
+    (
+        "What evidence contradicts an intervention recommendation for GAD?",
+        "CBT is an effective treatment for generalized anxiety disorder.",
+    ),
+])
+def test_clinician_queries_do_not_return_topical_non_answers(question, irrelevant):
+    rows = [hit(irrelevant)]
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+
+
+@pytest.mark.parametrize("question,statement", [
+    (
+        "What treatments are supported for generalized anxiety disorder?",
+        "CBT was effective for adults with generalized anxiety disorder.",
+    ),
+    (
+        "What does the evidence say about CBT for social anxiety disorder?",
+        "CBT reduced symptom severity in adults with social anxiety disorder.",
+    ),
+    (
+        "Compare exposure therapy and CBT for panic disorder.",
+        "CBT and exposure therapy showed no significant difference for panic disorder.",
+    ),
+    (
+        "What evidence contradicts an intervention recommendation for GAD?",
+        "CBT did not reduce anxiety symptoms in adults with generalized anxiety disorder.",
+    ),
+    (
+        "How is panic disorder diagnosed?",
+        "Panic disorder diagnosis requires assessment of recurrent unexpected panic attacks.",
+    ),
+])
+def test_clinician_questions_can_select_direct_source_sentences(question, statement):
+    rows = [hit(statement)]
+    payload = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+    assert payload.answer == f"- {statement} [S1]"
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(payload, rows).supported
+
+
+def test_comparison_requires_comparative_outcome_not_two_treatment_mentions():
+    question = "Compare exposure therapy and CBT for panic disorder."
+    rows = [hit("CBT and exposure therapy are treatments for panic disorder.")]
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
+
+
+def test_recent_review_requires_relevant_treatment_finding_and_recent_review_level():
+    from datetime import UTC, datetime
+    from care_anxrag.models import EvidenceLevel
+
+    question = "What recent systematic reviews address anxiety-disorder treatment?"
+    biomarker = hit(
+        "This systematic review examined associations of inflammatory biomarkers "
+        "and anxiety disorders."
+    )
+    biomarker.chunk.evidence_level = EvidenceLevel.SYSTEMATIC_REVIEW
+    biomarker.chunk.published_at = datetime(2026, 7, 9, tzinfo=UTC)
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, [biomarker], retrieval(question, [biomarker]))
+
+    therapy = hit(
+        "CBT reduced symptom severity for adults with anxiety disorders "
+        "in the included studies."
+    )
+    therapy.chunk.evidence_level = EvidenceLevel.SYSTEMATIC_REVIEW
+    therapy.chunk.published_at = datetime(2026, 7, 9, tzinfo=UTC)
+    generated = EvidenceOnlyGenerator().generate(question, [therapy], retrieval(question, [therapy]))
+    assert generated.cited_source_ids == ["S1"]
+
+
+def test_authoritative_medication_query_excludes_unrelated_secondary_disease_reviews():
+    from care_anxrag.models import EvidenceLevel
+
+    question = "What do authoritative sources say about medication for anxiety?"
+    copd = hit("SSRIs may help anxiety symptoms in chronic obstructive pulmonary disease.")
+    copd.chunk.evidence_level = EvidenceLevel.META_ANALYSIS
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, [copd], retrieval(question, [copd]))
+
+    who = hit(
+        "Antidepressant medications, such as selective serotonin reuptake "
+        "inhibitors (SSRIs), can also be useful in treating adults with anxiety disorders."
+    )
+    who.chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    generated = EvidenceOnlyGenerator().generate(question, [who], retrieval(question, [who]))
+    assert generated.cited_source_ids == ["S1"]
+
+
+def test_gad_at_sentence_end_or_punctuation_is_detected_as_subtype():
+    assert "generalized_anxiety_disorder" in QueryAnalyzer().analyze(
+        "What evidence contradicts treatment for GAD?"
+    ).anxiety_subtypes
