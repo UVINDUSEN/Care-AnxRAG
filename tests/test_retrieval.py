@@ -924,3 +924,16 @@ def test_abstention_checks_outcome_comorbidity_without_named_treatment(runtime) 
     assert reason == (
         "insufficient_direct_evidence_for_requested_clinical_context"
     )
+
+
+
+def test_social_anxiety_retrieval_includes_social_phobia_synonym():
+    research_question = QueryAnalyzer().analyze(
+        "What does the evidence say about CBT for social anxiety disorder?"
+    )
+    assert research_question.anxiety_subtypes == ["social_anxiety_disorder"]
+    assert "social phobia" in research_question.retrieval_query
+    assert "cognitive behavioural therapy" in research_question.retrieval_query
+
+    reverse = QueryAnalyzer().analyze("What works for social phobia?")
+    assert "social anxiety disorder" in reverse.retrieval_query
