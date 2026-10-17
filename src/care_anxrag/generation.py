@@ -60,6 +60,40 @@ class EvidenceOnlyGenerator:
                 uncertainty="Bibliographic matches only; no treatment efficacy conclusion.",
             )
 
+        # An overview of psychological versus pharmacological approaches can
+        # be answered with separate *direct* findings. Do not invent a relative
+        # efficacy ranking or merge different sources into a new claim.
+        if (
+            re.search(r"\b(?:psychological|psychotherap\w*|cognitive.behaviou?ral)\b", question, re.I)
+            and re.search(r"\b(?:pharmacological|medications?|antidepressants?)\b", question, re.I)
+            and re.search(r"\b(?:differences?|approaches?|roles?)\b", question, re.I)
+            and not re.search(r"\b(?:more effective|better|outperform|versus|vs\.)\b", question, re.I)
+        ):
+            psychological: tuple[int, str] | None = None
+            medication: tuple[int, str] | None = None
+            for index, hit in enumerate(hits, start=1):
+                excerpt = select_answer_sentence(hit, analysis)
+                if excerpt is None:
+                    continue
+                if (
+                    psychological is None
+                    and re.search(r"\b(?:CBT|cognitive.behaviou?ral therap\w*|psychotherap\w*|psychological therap\w*|exposure therapy)\b", excerpt, re.I)
+                ):
+                    psychological = (index, excerpt)
+                if (
+                    medication is None
+                    and re.search(r"\b(?:SSRIs?|SNRIs?|antidepressants?|medications?|benzodiazepines?)\b", excerpt, re.I)
+                ):
+                    medication = (index, excerpt)
+            if psychological is None or medication is None:
+                raise InsufficientAnswerEvidence()
+            distinct = list(dict.fromkeys((psychological, medication)))
+            return GeneratedPayload(
+                answer="\n".join(f"- {sentence} [S{index}]" for index, sentence in distinct),
+                cited_source_ids=list(dict.fromkeys(f"S{index}" for index, _ in distinct)),
+                uncertainty=None,
+            )
+
         # Several retrieved chunks can belong to one publication. Pick its
         # most self-contained eligible sentence before building citations, so
         # two paragraphs from NIMH are not presented as independent studies.
