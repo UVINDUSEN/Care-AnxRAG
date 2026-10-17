@@ -21,6 +21,7 @@ class SafetyRouter:
         r"\\bi\\s+(?:want|wish)\\s+to\\s+(?:die|kill\\s+my\\s*self)\\b",
         r"\bend my life\b",
         r"\bi(?:'m| am| feel| have been)?\s+suicidal\b",
+        r"\bi\s+(?:have|am having|keep having)\s+suicidal\s+(?:thoughts?|ideas?|urges?)\b",
         r"\bmy suicidal (?:thoughts|plan|intent)\b",
         r"\b(?:want|plan|intend|going) to (?:die|kill myself|end my life)\b",
         r"\bself[- ]?harm(?:ing)? myself\b",
