@@ -71,8 +71,8 @@ _RESULT_STATEMENT = re.compile(
 _INTERVENTION = re.compile(
     r"\b(?:CBT|cognitive[- ]behaviou?ral therap(?:y|ies)|"
     r"exposure[- ](?:based )?(?:therapy|treatment)|metacognitive therap(?:y|ies)|"
-    r"psychotherap(?:y|ies)|psychological therap(?:y|ies)|"
-    r"pharmacolog(?:y|ical)|antidepressants?|SSRIs?|SNRIs?|"
+    r"psychotherap(?:y|ies)|psychological (?:therap(?:y|ies)|interventions?|treatments?)|"
+    r"pharmacolog(?:y|ical)|non[- ]pharmacological interventions?|medications?|antidepressants?|SSRIs?|SNRIs?|"
     r"benzodiazepines?|sertraline|escitalopram|"
     r"repetitive transcranial magnetic stimulation|rTMS|tDCS|"
     r"mindfulness[- ]based (?:therapy|intervention)|"
@@ -124,6 +124,7 @@ _NON_ANSWER_METHOD = re.compile(
     r"this (?:study|review) (?:aims|aimed|investigated)|"
     r"(?:electronic |bibliographic )?databases?:|"
     r"study protocol|meeting diagnostic criteria|randomly allocated)\b"
+    r"|\b(?:this|the) (?:network )?(?:meta-analysis|systematic review) (?:integrates|examines|explores|evaluates|assesses)\b"
     r"|^(?:to (?:evaluate|assess|investigate|compare|explore|determine|examine)\b"
     r"|comparing the (?:effectiveness|efficacy|safety)\b)",
     re.I,
@@ -192,6 +193,10 @@ def _requires_clinician_task_evidence(
             return False
 
     if analysis.intent == QueryIntent.TREATMENT:
+        # Background impairment is not evidence about treatments.
+        if re.search(r"\b(?:treatments?|therap(?:y|ies)|interventions?|approaches?|CBT)\b", question, re.I):
+            if not _INTERVENTION.search(sentence):
+                return False
         # Background prevalence and symptom descriptions cannot satisfy a
         # question asking what interventions are supported.
         if (
@@ -288,6 +293,9 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
 
     eligible: list[str] = []
     for sentence in candidates:
+        # A dangling list label is not a medical answer.
+        if sentence.rstrip().endswith(":"):
+            continue
         if _NON_FINDING.search(sentence):
             continue
         if not _requires_clinician_task_evidence(sentence, hit, analysis):
