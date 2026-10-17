@@ -233,7 +233,7 @@ class Settings:
                 "CARE_GENERATOR_PROVIDER=ollama is disabled: "
                 "free-form medical answer generation is disabled"
             )
-        if self.generator_provider not in {"extractive", "rule"}:
+        if self.generator_provider not in {"extractive", "rule", "ollama_evidence"}:
             raise ValueError("Unsupported generator provider")
         if self.reranker_provider not in {"cross_encoder", "heuristic"}:
             raise ValueError("Unsupported reranker provider")
