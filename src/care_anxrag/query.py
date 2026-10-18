@@ -164,7 +164,7 @@ class QueryAnalyzer:
             return QueryIntent.MEDICATION
 
         if re.search(
-            r"\b(treat(?:ment|ments|ed|ing|s)?|therap(?:y|ies)|cbt|exposure|interventions?|recommended|recommendations?)\b",
+            r"\b(treat(?:ment|ments|ed|ing|s)?|therap(?:y|ies)|psychotherap(?:y|ies)|cbt|exposure|interventions?|recommended|recommendations?)\b",
             query,
         ):
             return QueryIntent.TREATMENT
