@@ -117,10 +117,17 @@ def test_p04_recent_systematic_reviews_exclude_old_meta_and_nontreatment_backgro
 def test_p04_recent_treatment_review_can_answer_with_direct_result():
     question = "What recent systematic reviews address anxiety-disorder treatment?"
     finding = "This systematic review found that CBT reduced anxiety symptoms in adults."
-    result = generate(
-        question, [hit(finding, level=EvidenceLevel.SYSTEMATIC_REVIEW)]
+    title = "CBT for anxiety disorders: a systematic review."
+    evidence = hit(
+        finding, level=EvidenceLevel.SYSTEMATIC_REVIEW, title=title
     )
-    assert result.answer == f"- {finding} [S1]"
+    evidence.chunk.url = "https://pubmed.ncbi.nlm.nih.gov/12345678/"
+    result = generate(question, [evidence])
+    # "What recent systematic reviews address ..." is a bibliographic
+    # discovery question. Return the source title, never infer effectiveness
+    # from its bibliographic metadata.
+    assert result.answer == f"- {title} [S1]"
+    assert result.uncertainty is not None
 
 
 def test_p05_authoritative_medication_excludes_off_target_and_methods():
