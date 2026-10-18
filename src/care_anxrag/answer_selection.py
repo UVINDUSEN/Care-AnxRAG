@@ -155,7 +155,7 @@ _NON_ANSWER_METHOD = re.compile(
 # on an antecedent that is omitted from a one-sentence extractive answer.
 # Exact-substring grounding alone cannot make such a claim self-contained.
 _DEPENDENT_SOURCE_SENTENCE = re.compile(
-    r"^(?:these|those|such|this)\\s+(?:medications?|drugs?|treatments?|interventions?)\\b",
+    r"^(?:these|those|such|this)\s+(?:medications?|drugs?|treatments?|interventions?)\b",
     re.I,
 )
 
