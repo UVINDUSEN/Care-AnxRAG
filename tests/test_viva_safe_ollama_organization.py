@@ -160,6 +160,23 @@ def test_ollama_malicious_or_invalid_output_is_discarded(monkeypatch, malicious)
     assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(result, h).supported
 
 
+def test_ollama_ordering_timeout_is_bounded_and_falls_back(monkeypatch):
+    def too_slow(url, **kwargs):
+        assert url.endswith("/api/chat")
+        assert kwargs["timeout"] == 5.0
+        raise httpx.ReadTimeout("synthetic slow local Ollama response")
+
+    monkeypatch.setattr("care_anxrag.ollama_organizer.httpx.post", too_slow)
+    h = comparison_hits()
+    result = OllamaEvidenceOrganizer(
+        "http://localhost:11434", "gemma3:4b", timeout_seconds=5.0
+    ).generate(QUESTION, h, retrieval(QUESTION, h))
+    assert result.cited_source_ids == ["S4", "S2"]
+    assert f"{PSYCH} [S4]" in result.answer
+    assert f"{MED} [S2]" in result.answer
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(result, h).supported
+
+
 def test_ollama_outage_falls_back_to_source_only_output(monkeypatch):
     def offline(*args, **kwargs):
         raise httpx.ConnectError("synthetic disconnected Ollama")
