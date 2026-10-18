@@ -439,8 +439,8 @@ def test_nimh_medication_followup_without_antecedent_is_not_an_answer():
 def test_nimh_named_medication_sentence_selected_instead_of_dangling_followup():
     question = "What do authoritative sources say about medication for anxiety?"
     named = (
-        "Benzodiazepines, which are anti-anxiety sedative medications, are powerful "
-        "and begin working right away to reduce anxious feelings."
+        "Antidepressant medications, such as selective serotonin reuptake "
+        "inhibitors (SSRIs), can also be useful in treating adults with anxiety disorders."
     )
     dangling = (
         "These medications can be very effective in rapidly decreasing anxiety, "
