@@ -74,6 +74,42 @@ def test_p01_can_return_direct_supported_treatment_finding():
     assert result.answer == f"- {finding} [S1]"
 
 
+def test_p01_broad_gad_treatments_include_both_evidence_classes():
+    # Medication is ranked above psychotherapy, as in the live Mac run.
+    question = "What treatments are supported for generalized anxiety disorder?"
+    medication = (
+        "Long-term pharmacological treatments for GAD were useful "
+        "in improving anxiety symptoms."
+    )
+    psychological = (
+        "CBT reduced anxiety symptoms in adults with generalized anxiety disorder."
+    )
+    rows = [
+        hit(medication, index=1, title="GAD medication evidence"),
+        hit("GAD is a common anxiety disorder.", index=2),
+        hit(psychological, index=3, title="GAD CBT treatment trial"),
+    ]
+    result = generate(question, rows)
+    assert result.answer == (
+        f"- {psychological} [S3]\\n- {medication} [S1]"
+    ).replace("\\n", "\n")
+    assert result.cited_source_ids == ["S3", "S1"]
+
+
+def test_p01_does_not_relabel_other_disorder_evidence_as_gad():
+    question = "What treatments are supported for generalized anxiety disorder?"
+    medication = "SSRIs can be useful in treating adults with generalized anxiety disorder."
+    other_disorder = (
+        "CBT reduced anxiety symptoms in adults with social anxiety disorder."
+    )
+    rows = [hit(medication, index=1), hit(other_disorder, index=2)]
+    # A single eligible GAD class remains a partial answer; the other
+    # disorder's CBT evidence must not be brought into the GAD answer.
+    result = generate(question, rows)
+    assert result.cited_source_ids == ["S1"]
+    assert other_disorder not in result.answer
+
+
 def test_p02_social_anxiety_cbt_evidence_when_explicit_sentence_exists():
     question = "What does the evidence say about CBT for social anxiety disorder?"
     finding = "CBT reduced symptoms of social anxiety disorder in adults."

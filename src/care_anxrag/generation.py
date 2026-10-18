@@ -96,6 +96,49 @@ class EvidenceOnlyGenerator:
                 uncertainty=None,
             )
 
+        # A broad GAD treatment question asks for available *approaches*, not
+        # just the highest-ranked matching paper. Independently collect one
+        # eligible GAD-specific statement per treatment class. Do not infer
+        # relative efficacy or widen the sentence-level subtype safeguard.
+        if (
+            re.fullmatch(
+                r"\s*what\s+(?:treatments?|therapies|treatment approaches)\s+"
+                r"(?:are\s+)?(?:supported|recommended|available)\s+for\s+"
+                r"(?:generaliz(?:ed|ised) anxiety disorder|GAD)\s*\??\s*",
+                question, re.I,
+            )
+            and not analysis.treatments
+        ):
+            psychological: tuple[int, str] | None = None
+            medication: tuple[int, str] | None = None
+            for index, hit in enumerate(hits, start=1):
+                if psychological is None:
+                    statement = select_answer_sentence(
+                        hit, analysis, required_topic="psychological"
+                    )
+                    if statement is not None:
+                        psychological = (index, statement)
+                if medication is None:
+                    statement = select_answer_sentence(
+                        hit, analysis, required_topic="medication"
+                    )
+                    if statement is not None:
+                        medication = (index, statement)
+            # Preserve existing behavior when the available evidence does not
+            # establish BOTH GAD-specific classes. Do not invent a missing arm.
+            if psychological is not None and medication is not None:
+                statements = list(dict.fromkeys((psychological, medication)))
+                return GeneratedPayload(
+                    answer="\n".join(
+                        f"- {statement} [S{index}]"
+                        for index, statement in statements
+                    ),
+                    cited_source_ids=list(
+                        dict.fromkeys(f"S{index}" for index, _ in statements)
+                    ),
+                    uncertainty=None,
+                )
+
         # A contradiction question needs a verified pair of distinct retained
         # sources, not a negative sentence or NLI score in isolation.
         if re.search(r"\b(?:contradict|conflict|disagree|opposing)\w*\b", question, re.I):
