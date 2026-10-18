@@ -41,7 +41,7 @@ _NON_FINDING = re.compile(
 _FINDING = re.compile(
     r"\b(?:reduc(?:e[sd]?|ing|tion)|improv(?:e[sd]?|ing|ement)|benefit(?:s|ed)?|"
     r"effective(?:ness)?|efficacy|efficacious|research[- ]supported|useful in treat\w*|remission|response rate|relapse|"
-    r"adverse (?:effects?|events?)|side effects?|recommended|first[- ]line|"
+    r"adverse (?:effects?|events?)|side effects?|recommended|first[- ]line|essential treatments?|"
     r"uncertain|inconclusive|insufficient|no (?:significant )?(?:difference|effect)|"
     r"not differ|equivalent|most evidence)\b"
     r"|\bevidence (?:supports?|suggests?)\b"
@@ -125,7 +125,7 @@ _NON_ANSWER_METHOD = re.compile(
     r"(?:electronic |bibliographic )?databases?:|"
     r"study protocol|meeting diagnostic criteria|randomly allocated)\b"
     r"|\b(?:this|the) (?:network )?(?:meta-analysis|systematic review) (?:integrates|examines|explores|evaluates|assesses)\b"
-    r"|^(?:to (?:evaluate|assess|investigate|compare|explore|determine|examine)\b"
+    r"|^(?:(?:to )?(?:evaluate|assess|investigate|compare|explore|determine|examine)\b"
     r"|comparing the (?:effectiveness|efficacy|safety)\b)",
     re.I,
 )
@@ -227,7 +227,7 @@ def _requires_clinician_task_evidence(
 
     return True
 
-def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | None:
+def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis, *, required_topic: str | None = None) -> str | None:
     """Return an eligible source sentence, retaining its wording and scope.
 
     Treatment/effectiveness questions require a finding or evidence statement,
@@ -311,6 +311,16 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
             continue
         if requires_finding and not _FINDING.search(sentence):
             continue
+        if required_topic == "psychological" and not re.search(
+            r"\b(?:CBT|cognitive[- ]behaviou?ral|psychotherap\w*|psychological (?:therap\w*|interventions?|treatments?)|exposure therapy)\b",
+            sentence, re.I,
+        ):
+            continue
+        if required_topic == "medication" and not re.search(
+            r"\b(?:SSRIs?|SNRIs?|antidepressants?|medications?|benzodiazepines?|pharmacological treatments?)\b",
+            sentence, re.I,
+        ):
+            continue
         if not supports_explicit_clinical_context(
             analysis.anxiety_subtypes,
             analysis.treatments,
@@ -323,7 +333,15 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis) -> str | Non
             continue
         sentence_populations = extract_population_concepts(sentence)
         if evidence_populations and not (sentence_populations & evidence_populations):
-            continue
+            # General government guidance can state unqualified advice in one
+            # sentence and discuss adults/children elsewhere in the chunk.
+            # Keep strict study-population rules and explicit user population.
+            if not (
+                hit.chunk.evidence_level == EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+                and not requested_populations
+                and not sentence_populations
+            ):
+                continue
         if requested_populations and sentence_populations and not (
             requested_populations & sentence_populations
         ):

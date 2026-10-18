@@ -178,3 +178,51 @@ def test_outside_scope_remains_abstention(runtime):
     assert result.abstained
     assert result.abstention_reason == "outside_anxiety_scope"
     assert result.citations == []
+
+
+def test_who_style_chunk_selects_both_treatment_facts():
+    """Regression for observed live WHO retrieval: two facets in one chunk."""
+    from care_anxrag.models import EvidenceLevel
+    from care_anxrag.query import QueryAnalyzer
+    from care_anxrag.answer_selection import select_answer_sentence
+
+    statement_psych = (
+        "Psychological interventions are essential treatments for anxiety disorders "
+        "and refer primarily to talk therapy with professionals or supervised lay therapists."
+    )
+    statement_med = (
+        "Antidepressant medications, such as selective serotonin reuptake inhibitors "
+        "(SSRIs), can also be useful in treating adults with anxiety disorders."
+    )
+    who = hit(
+        "There are several effective treatments for anxiety disorders. "
+        + statement_psych + " " + statement_med,
+        1,
+        title="Anxiety disorders",
+    )
+    who.chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    question = QUESTION
+    analysis = QueryAnalyzer().analyze(question)
+    assert analysis.treatments == []
+    assert select_answer_sentence(who, analysis, required_topic="psychological") == statement_psych
+    assert select_answer_sentence(who, analysis, required_topic="medication") == statement_med
+
+    payload = EvidenceOnlyGenerator().generate(
+        question, [who], retrieval(question, [who])
+    )
+    assert statement_psych + " [S1]" in payload.answer
+    assert statement_med + " [S1]" in payload.answer
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(
+        payload, [who]
+    ).supported
+
+
+def test_acupuncture_study_objective_not_misclassified_as_result():
+    objective = (
+        "Evaluate the effectiveness of acupuncture and electroacupuncture in "
+        "the treatment of anxiety to verify if people report reduced scores "
+        "after five sessions."
+    )
+    rows = [hit(objective)]
+    with pytest.raises(InsufficientAnswerEvidence):
+        EvidenceOnlyGenerator().generate(QUESTION, rows, retrieval(QUESTION, rows))

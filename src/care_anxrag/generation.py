@@ -72,19 +72,20 @@ class EvidenceOnlyGenerator:
             psychological: tuple[int, str] | None = None
             medication: tuple[int, str] | None = None
             for index, hit in enumerate(hits, start=1):
-                excerpt = select_answer_sentence(hit, analysis)
-                if excerpt is None:
-                    continue
-                if (
-                    psychological is None
-                    and re.search(r"\b(?:CBT|cognitive.behaviou?ral therap\w*|psychotherap\w*|psychological therap\w*|exposure therapy)\b", excerpt, re.I)
-                ):
-                    psychological = (index, excerpt)
-                if (
-                    medication is None
-                    and re.search(r"\b(?:SSRIs?|SNRIs?|antidepressants?|medications?|benzodiazepines?)\b", excerpt, re.I)
-                ):
-                    medication = (index, excerpt)
+                # Evaluate both facets independently; a single WHO chunk may
+                # contain an eligible statement for each treatment class.
+                if psychological is None:
+                    excerpt = select_answer_sentence(
+                        hit, analysis, required_topic="psychological"
+                    )
+                    if excerpt is not None:
+                        psychological = (index, excerpt)
+                if medication is None:
+                    excerpt = select_answer_sentence(
+                        hit, analysis, required_topic="medication"
+                    )
+                    if excerpt is not None:
+                        medication = (index, excerpt)
             if psychological is None or medication is None:
                 raise InsufficientAnswerEvidence()
             distinct = list(dict.fromkeys((psychological, medication)))
