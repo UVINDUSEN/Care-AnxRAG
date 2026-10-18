@@ -102,8 +102,6 @@ class EvidenceOnlyGenerator:
         # Original source indices are retained for the verifier's S# mapping.
         best_by_document: dict[str, tuple[int, str]] = {}
         for index, hit in enumerate(hits, start=1):
-            if allowed_conflict_indices is not None and index not in allowed_conflict_indices:
-                continue
             excerpt = select_answer_sentence(hit, analysis)
             if excerpt is None:
                 continue
