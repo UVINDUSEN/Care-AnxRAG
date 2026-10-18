@@ -160,6 +160,30 @@ _DEPENDENT_SOURCE_SENTENCE = re.compile(
 )
 
 
+# Delivery method and treatment duration are integral to the requested clinical
+# intervention. A citation about ordinary CBT cannot answer an internet-CBT
+# question, and rapid symptom relief is not evidence for long-term treatment.
+_CBT_TOPIC = re.compile(
+    r"\b(?:CBT|cognitive[- ]behaviou?ral(?:\s+therapy)?)\b", re.I,
+)
+_CBT_DELIVERY_QUERY = re.compile(
+    r"\b(?:internet[- ](?:delivered|based)|online|web[- ]based|digital|"
+    r"electronic(?:ally)?[- ]delivered|e[- ]CBT|iCBT)\b", re.I,
+)
+_CBT_DELIVERY_EVIDENCE = re.compile(
+    r"\b(?:internet[- ](?:delivered|based)|online|web[- ]based|digital|"
+    r"electronically[- ]delivered|electronically delivered|"
+    r"e[- ]CBT|iCBT|DCBT)\b", re.I,
+)
+_LONG_TERM_REQUEST = re.compile(r"\blong[- ]term\b", re.I)
+_LONG_TERM_EVIDENCE = re.compile(
+    r"\b(?:long[- ]term|maintenance|sustained treatment)\b", re.I,
+)
+_PREVALENCE_BACKGROUND = re.compile(
+    r"\b(?:prevalence|incidence|occurs in\s+\d|affects\s+\d)\b", re.I,
+)
+
+
 _DISORDER_TREATMENT = re.compile(
     r"\b(?:anxiety disorders?|"
     r"generaliz(?:ed|ised) anxiety disorder|panic disorder|social anxiety disorder|"
@@ -336,6 +360,27 @@ def select_answer_sentence(
             continue
         if _NON_FINDING.search(sentence):
             continue
+        if analysis.intent == QueryIntent.TREATMENT:
+            # A disease prevalence/background sentence is not evidence that
+            # a specific therapy works (P10 live regression).
+            if _PREVALENCE_BACKGROUND.search(sentence) and not _INTERVENTION.search(sentence):
+                continue
+            # Keep requested delivery modality in the *selected sentence*.
+            if (
+                _CBT_TOPIC.search(analysis.normalized_query)
+                and _CBT_DELIVERY_QUERY.search(analysis.normalized_query)
+                and not (
+                    _CBT_TOPIC.search(sentence)
+                    and _CBT_DELIVERY_EVIDENCE.search(sentence)
+                )
+            ):
+                continue
+            # Short-acting medication effects cannot answer long-term use (P12).
+            if (
+                _LONG_TERM_REQUEST.search(analysis.normalized_query)
+                and not _LONG_TERM_EVIDENCE.search(sentence)
+            ):
+                continue
         if not _requires_clinician_task_evidence(
             sentence, hit, analysis, allow_conflict_pair=allow_conflict_pair
         ):

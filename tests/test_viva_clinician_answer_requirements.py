@@ -226,3 +226,82 @@ def test_p07_can_answer_with_direct_diagnostic_criteria_sentence():
     finding = "Diagnostic criteria for panic disorder include recurrent unexpected panic attacks."
     result = generate(question, [hit(finding)])
     assert result.answer == f"- {finding} [S1]"
+
+
+
+# Second 10-case real-corpus regressions (2026-10-19).
+# Synthetic replicas of the observed answer sentences; NOT clinical validation.
+def test_p10_prevalence_without_treatment_evidence_is_not_an_answer():
+    q = "What evidence supports psychotherapy for panic disorder?"
+    assert QueryAnalyzer().analyze(q).intent.value == "treatment"
+    background = (
+        "Panic disorder occurs in 1-3% of adolescents and without treatment "
+        "often has a chronic course."
+    )
+    with pytest.raises(InsufficientAnswerEvidence):
+        generate(q, [hit(background)])
+
+
+def test_p10_keeps_direct_psychotherapy_evidence():
+    q = "What evidence supports psychotherapy for panic disorder?"
+    evidence = (
+        "Cognitive behavioral therapy (CBT), a research-supported type "
+        "of psychotherapy, is commonly used to treat panic disorder."
+    )
+    result = generate(q, [hit(evidence)])
+    assert result.answer == f"- {evidence} [S1]"
+
+
+def test_p11_general_cbt_is_not_internet_delivered_cbt_evidence():
+    q = "What research supports internet-delivered CBT for social anxiety disorder?"
+    general_cbt = (
+        "Cognitive behavioral therapy (CBT), a research-supported type of "
+        "psychotherapy, is commonly used to treat social anxiety disorder."
+    )
+    with pytest.raises(InsufficientAnswerEvidence):
+        generate(q, [hit(general_cbt)])
+
+
+def test_p11_can_select_direct_internet_cbt_finding():
+    q = "What research supports internet-delivered CBT for social anxiety disorder?"
+    evidence = (
+        "Internet-delivered CBT reduced symptoms of social anxiety disorder "
+        "in adults in this randomized trial."
+    )
+    result = generate(q, [hit(evidence)])
+    assert result.answer == f"- {evidence} [S1]"
+
+
+def test_p12_acute_benzodiazepine_effect_is_not_long_term_evidence():
+    q = "What is known about long-term pharmacological treatment for panic disorder?"
+    acute = (
+        "Benzodiazepines, which are anti-anxiety sedative medications, "
+        "can be very effective in rapidly decreasing panic attack symptoms."
+    )
+    with pytest.raises(InsufficientAnswerEvidence):
+        generate(q, [hit(acute)])
+
+
+def test_p12_can_select_explicit_long_term_panic_finding():
+    q = "What is known about long-term pharmacological treatment for panic disorder?"
+    evidence = (
+        "Long-term pharmacological treatment improved anxiety symptoms "
+        "in adults with panic disorder."
+    )
+    result = generate(q, [hit(evidence)])
+    assert result.answer == f"- {evidence} [S1]"
+
+
+def test_p08_digital_cbt_question_does_not_include_generic_cbt():
+    q = "What evidence supports digital CBT for generalized anxiety disorder?"
+    generic = (
+        "Cognitive behavioural therapy (CBT) is an effective treatment for GAD."
+    )
+    digital = (
+        "Digital CBT reduced anxiety symptoms among adults with "
+        "generalized anxiety disorder."
+    )
+    rows = [hit(generic, index=1), hit(digital, index=2)]
+    result = generate(q, rows)
+    assert result.cited_source_ids == ["S2"]
+    assert result.answer == f"- {digital} [S2]"
