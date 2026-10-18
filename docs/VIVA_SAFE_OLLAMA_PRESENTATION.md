@@ -49,6 +49,10 @@ ollama list
 # gemma3:4b must already be installed and the local Ollama service running.
 export CARE_GENERATOR_PROVIDER=ollama_evidence
 export CARE_GENERATION_MODEL=gemma3:4b
+# Optional live-viva latency cap. Default remains 30 seconds.
+# If Ollama cannot order IDs within the cap, CARE falls back to a
+# deterministic ordering of the same verbatim, citation-checked sentences.
+export CARE_OLLAMA_PRESENTATION_TIMEOUT_SECONDS=5
 care-anxrag ask \
   "What are the differences between psychological and pharmacological treatment approaches for anxiety disorders?" \
   --project-root . --debug
