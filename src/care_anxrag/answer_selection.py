@@ -333,7 +333,15 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis, *, required_
             continue
         sentence_populations = extract_population_concepts(sentence)
         if evidence_populations and not (sentence_populations & evidence_populations):
-            continue
+            # General government guidance can state unqualified advice in one
+            # sentence and discuss adults/children elsewhere in the chunk.
+            # Keep strict study-population rules and explicit user population.
+            if not (
+                hit.chunk.evidence_level == EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+                and not requested_populations
+                and not sentence_populations
+            ):
+                continue
         if requested_populations and sentence_populations and not (
             requested_populations & sentence_populations
         ):
