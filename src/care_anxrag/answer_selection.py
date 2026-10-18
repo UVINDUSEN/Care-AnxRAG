@@ -126,7 +126,7 @@ _COMPARISON_REQUEST = re.compile(
 _COMPARATIVE_RESULT = re.compile(
     r"\b(?:compared (?:with|to)|versus|vs\.?|relative to|"
     r"superior|inferior|equivalent|no (?:significant )?difference|"
-    r"equally effective)\b", re.I
+    r"equally effective|more effective than|less effective than)\b", re.I
 )
 _DIAGNOSIS_PROCESS = re.compile(
     r"\b(?:diagnosis (?:requires|involves|is based on)|"
@@ -161,6 +161,7 @@ _DISORDER_TREATMENT = re.compile(
 
 def _requires_clinician_task_evidence(
     sentence: str, hit: SearchHit, analysis: QueryAnalysis,
+    *, allow_conflict_pair: bool = False,
 ) -> bool:
     """Require the sentence to address a clinician's requested evidence task.
 
@@ -233,7 +234,7 @@ def _requires_clinician_task_evidence(
         ):
             return False
 
-    if _CONTRADICTION_REQUEST.search(question):
+    if _CONTRADICTION_REQUEST.search(question) and not allow_conflict_pair:
         # This only selects explicit negative comparative findings; a research
         # gap, a study aim, or a generic "however" is not contradictory evidence.
         if not (
@@ -249,7 +250,11 @@ def _requires_clinician_task_evidence(
 
     return True
 
-def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis, *, required_topic: str | None = None) -> str | None:
+def select_answer_sentence(
+    hit: SearchHit, analysis: QueryAnalysis, *,
+    required_topic: str | None = None,
+    allow_conflict_pair: bool = False,
+) -> str | None:
     """Return an eligible source sentence, retaining its wording and scope.
 
     Treatment/effectiveness questions require a finding or evidence statement,
@@ -320,7 +325,9 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis, *, required_
             continue
         if _NON_FINDING.search(sentence):
             continue
-        if not _requires_clinician_task_evidence(sentence, hit, analysis):
+        if not _requires_clinician_task_evidence(
+            sentence, hit, analysis, allow_conflict_pair=allow_conflict_pair
+        ):
             continue
         # Descriptive queries may list or identify an intervention without
         # claiming effectiveness. All other treatment queries require a
