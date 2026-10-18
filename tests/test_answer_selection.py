@@ -421,6 +421,39 @@ def test_authoritative_medication_query_excludes_unrelated_secondary_disease_rev
     assert generated.cited_source_ids == ["S1"]
 
 
+
+
+def test_nimh_medication_followup_without_antecedent_is_not_an_answer():
+    question = "What do authoritative sources say about medication for anxiety?"
+    dangling = (
+        "These medications can be very effective in rapidly decreasing anxiety, "
+        "but some people build up a tolerance to them and need increasing doses "
+        "to get the same effect."
+    )
+    h = hit(dangling)
+    h.chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, [h], retrieval(question, [h]))
+
+
+def test_nimh_named_medication_sentence_selected_instead_of_dangling_followup():
+    question = "What do authoritative sources say about medication for anxiety?"
+    named = (
+        "Benzodiazepines, which are anti-anxiety sedative medications, are powerful "
+        "and begin working right away to reduce anxious feelings."
+    )
+    dangling = (
+        "These medications can be very effective in rapidly decreasing anxiety, "
+        "but some people build up a tolerance to them and need increasing doses "
+        "to get the same effect."
+    )
+    h = hit(named + " " + dangling)
+    h.chunk.evidence_level = EvidenceLevel.GOVERNMENT_HEALTH_INFORMATION
+    result = EvidenceOnlyGenerator().generate(question, [h], retrieval(question, [h]))
+    assert named in result.answer
+    assert dangling not in result.answer
+    assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(result, [h]).supported
+
 def test_gad_at_sentence_end_or_punctuation_is_detected_as_subtype():
     assert "generalized_anxiety_disorder" in QueryAnalyzer().analyze(
         "What evidence contradicts treatment for GAD?"
