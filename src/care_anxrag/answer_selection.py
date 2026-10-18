@@ -16,6 +16,7 @@ from .clinical_match import (
 )
 from .models import EvidenceLevel, QueryAnalysis, QueryIntent, SearchHit
 from .util import content_tokens, source_sentences
+from .question_requirements import eligible_document_for_question, is_treatment_review_request
 
 
 class InsufficientAnswerEvidence(ValueError):
