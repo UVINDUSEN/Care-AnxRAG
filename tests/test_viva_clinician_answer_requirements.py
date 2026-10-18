@@ -98,7 +98,7 @@ def test_p01_broad_gad_treatments_include_both_evidence_classes():
 
 def test_p01_does_not_relabel_other_disorder_evidence_as_gad():
     question = "What treatments are supported for generalized anxiety disorder?"
-    medication = "SSRIs can be useful in treating adults with GAD."
+    medication = "SSRIs can be useful in treating adults with generalized anxiety disorder."
     other_disorder = (
         "CBT reduced anxiety symptoms in adults with social anxiety disorder."
     )
