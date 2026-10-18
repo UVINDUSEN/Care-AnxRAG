@@ -10,6 +10,15 @@ from .util import content_tokens, normalize_whitespace, source_sentences
 
 _CITATION_RE = re.compile(r"\[(S\d+)\]")
 
+# Fixed non-clinical section labels emitted by OllamaEvidenceOrganizer.
+_PRESENTATION_HEADINGS = frozenset({
+    "Psychological approaches",
+    "Medication approaches",
+    "Diagnostic considerations",
+    "Research findings",
+    "Evidence",
+})
+
 
 class TextNliClassifier(Protocol):
     def classify_text_pairs(
@@ -63,6 +72,8 @@ def extract_claims(answer: str) -> list[GroundedClaim]:
         sentence = normalize_whitespace(raw_sentence)
         if not sentence:
             continue
+        if sentence in _PRESENTATION_HEADINGS:
+            continue
         citations = tuple(dict.fromkeys(_CITATION_RE.findall(sentence)))
         text = normalize_whitespace(_CITATION_RE.sub("", sentence))
         text = re.sub(r"^[-*]\s+", "", text)
@@ -97,6 +108,8 @@ class ClaimGroundingVerifier:
         self,
         payload: GeneratedPayload,
         hits: Sequence[SearchHit],
+        *,
+        allow_metadata_titles: bool = False,
     ) -> GroundingReport:
         extracted_claims = extract_claims(payload.answer)
         inline_citations = {
@@ -159,7 +172,11 @@ class ClaimGroundingVerifier:
 
                 checked_pairs += 1
                 source_text = re.sub(r"\s+([.!?,;:])", r"\1", normalize_whitespace(hit.chunk.text))
-                if normalized_claim not in source_text:
+                title_match = (
+                    allow_metadata_titles
+                    and normalized_claim.rstrip(". ") == normalize_whitespace(hit.chunk.title).rstrip(". ")
+                )
+                if normalized_claim not in source_text and not title_match:
                     failures.append(
                         GroundingFailure(
                             claim=claim.text,

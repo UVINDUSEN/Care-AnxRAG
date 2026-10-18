@@ -8,8 +8,8 @@ import httpx
 from pydantic import ValidationError
 
 from .answer_selection import InsufficientAnswerEvidence, select_answer_sentence
-from .models import GeneratedPayload, RelationLabel, RetrievalResult, SearchHit
-from .question_requirements import is_conflict_request
+from .bibliography import is_review_discovery_query, review_title_is_relevant
+from .models import GeneratedPayload, QueryIntent, RetrievalResult, SearchHit
 from .query import QueryAnalyzer
 
 
@@ -39,42 +39,82 @@ class EvidenceOnlyGenerator:
 
         analysis = QueryAnalyzer().analyze(question)
 
-        # A psychiatrist asking about conflicting findings must not receive
-        # unrelated limitations or study aims labelled as a contradiction.
-        # Require an explicit NLI contradictory relation between two distinct
-        # retained documents, plus eligible findings from BOTH sources.
-        allowed_conflict_indices: set[int] | None = None
-        if is_conflict_request(question):
-            by_chunk = {
-                hit.chunk.chunk_id: (i, hit)
-                for i, hit in enumerate(hits, start=1)
-            }
-            for relation in retrieval.relations:
-                if (relation.label != RelationLabel.CONTRADICTION
-                    or relation.confidence < 0.72):
+        if is_review_discovery_query(analysis):
+            seen_documents: set[str] = set()
+            for index, hit in enumerate(hits, start=1):
+                if hit.chunk.document_id in seen_documents:
                     continue
-                left = by_chunk.get(relation.left_chunk_id)
-                right = by_chunk.get(relation.right_chunk_id)
-                if not left or not right:
+                if not review_title_is_relevant(hit, analysis):
                     continue
-                if left[1].chunk.document_id == right[1].chunk.document_id:
-                    continue
-                if (left[1].excluded_due_to_conflict
-                    or right[1].excluded_due_to_conflict):
-                    continue
-                if (select_answer_sentence(left[1], analysis) is not None
-                    and select_answer_sentence(right[1], analysis) is not None):
-                    allowed_conflict_indices = {left[0], right[0]}
+                seen_documents.add(hit.chunk.document_id)
+                cited_id = f"S{index}"
+                # Verbatim indexed source title, never an efficacy conclusion.
+                sentences.append(f"- {hit.chunk.title} [{cited_id}]")
+                cited.append(cited_id)
+                if len(sentences) == 3:
                     break
-            if allowed_conflict_indices is None:
+            if not sentences:
                 raise InsufficientAnswerEvidence()
+            return GeneratedPayload(
+                answer="\n".join(sentences),
+                cited_source_ids=cited,
+                uncertainty="Bibliographic matches only; no treatment efficacy conclusion.",
+            )
 
+        # An overview of psychological versus pharmacological approaches can
+        # be answered with separate *direct* findings. Do not invent a relative
+        # efficacy ranking or merge different sources into a new claim.
+        if (
+            re.search(r"\b(?:psychological|psychotherap\w*|cognitive.behaviou?ral)\b", question, re.I)
+            and re.search(r"\b(?:pharmacological|medications?|antidepressants?)\b", question, re.I)
+            and re.search(r"\b(?:differences?|approaches?|roles?)\b", question, re.I)
+            and not re.search(r"\b(?:more effective|better|outperform|versus|vs\.)\b", question, re.I)
+        ):
+            psychological: tuple[int, str] | None = None
+            medication: tuple[int, str] | None = None
+            for index, hit in enumerate(hits, start=1):
+                # Evaluate both facets independently; a single WHO chunk may
+                # contain an eligible statement for each treatment class.
+                if psychological is None:
+                    excerpt = select_answer_sentence(
+                        hit, analysis, required_topic="psychological"
+                    )
+                    if excerpt is not None:
+                        psychological = (index, excerpt)
+                if medication is None:
+                    excerpt = select_answer_sentence(
+                        hit, analysis, required_topic="medication"
+                    )
+                    if excerpt is not None:
+                        medication = (index, excerpt)
+            if psychological is None or medication is None:
+                raise InsufficientAnswerEvidence()
+            distinct = list(dict.fromkeys((psychological, medication)))
+            return GeneratedPayload(
+                answer="\n".join(f"- {sentence} [S{index}]" for index, sentence in distinct),
+                cited_source_ids=list(dict.fromkeys(f"S{index}" for index, _ in distinct)),
+                uncertainty=None,
+            )
+
+        # Several retrieved chunks can belong to one publication. Pick its
+        # most self-contained eligible sentence before building citations, so
+        # two paragraphs from NIMH are not presented as independent studies.
+        # Original source indices are retained for the verifier's S# mapping.
+        best_by_document: dict[str, tuple[int, str]] = {}
         for index, hit in enumerate(hits, start=1):
             if allowed_conflict_indices is not None and index not in allowed_conflict_indices:
                 continue
             excerpt = select_answer_sentence(hit, analysis)
             if excerpt is None:
                 continue
+            doc_id = hit.chunk.document_id
+            previous = best_by_document.get(doc_id)
+            if previous is None or self._sentence_priority(
+                excerpt, analysis.intent
+            ) > self._sentence_priority(previous[1], analysis.intent):
+                best_by_document[doc_id] = (index, excerpt)
+
+        for index, excerpt in list(best_by_document.values()):
             identity = " ".join(excerpt.split()).casefold()
             if identity in seen:
                 continue
@@ -93,6 +133,41 @@ class EvidenceOnlyGenerator:
             cited_source_ids=cited,
             uncertainty=None,
         )
+
+    @staticmethod
+    def _sentence_priority(sentence: str, intent: QueryIntent) -> int:
+        """Rank only already-eligible verbatim spans from ONE document.
+
+        This is a presentation preference, not a statement of clinical truth,
+        and never overrides retrieval thresholds or population safeguards.
+        """
+        if intent == QueryIntent.DIAGNOSIS:
+            has_context = bool(re.search(
+                r"\b(?:worr(?:y|ying)|behavioral changes|behavioural changes|"
+                r"behavior changes|behaviour changes|at least 1 month)\b",
+                sentence, re.I,
+            ))
+            mentions_disorder = bool(re.search(
+                r"\b(?:panic disorder|social anxiety disorder)\b",
+                sentence, re.I,
+            ))
+            return (4 if has_context and mentions_disorder else 0) + (
+                1 if re.search(r"\bdiagnos(?:is|ed|tic)\b", sentence, re.I) else 0
+            )
+        if intent == QueryIntent.TREATMENT:
+            if re.search(
+                r"\b(?:research[- ]supported|evidence[- ]based|"
+                r"first[- ]line)\b", sentence, re.I,
+            ):
+                return 3
+            if re.search(
+                r"\b(?:reduc(?:ed|es)|improv(?:ed|es)|effective(?:ness)?)\b",
+                sentence, re.I,
+            ):
+                return 2
+            if re.search(r"\bbenefits?\b", sentence, re.I):
+                return 1
+        return 0
 
     def ping(self) -> bool:
         return True

@@ -7,6 +7,8 @@ from datetime import datetime
 from time import perf_counter
 from typing import Sequence
 
+from .answer_selection import select_answer_sentence
+from .bibliography import is_review_discovery_query, review_title_is_relevant
 from .clinical_match import (
     concept_set_compatibility,
     population_compatibility,
@@ -303,12 +305,20 @@ class CareRetriever:
             )
 
         stage_started = perf_counter()
+        eligible_hits = [
+            hit
+            for hit in relevant_hits
+            if not hit.excluded_due_to_conflict
+        ]
+        # Ranking measures topical relevance, whereas extraction needs a
+        # question-answering sentence. A lower-ranked, threshold-passing
+        # clinical finding must not be hidden behind six high-ranked but
+        # non-answer background chunks. Preserve the original CARE order
+        # within both partitions and never revive excluded/conflicted hits.
+        if mode == "full":
+            eligible_hits = self._rank_by_answerability(eligible_hits, analysis)
         selected = self._diversify(
-            [
-                hit
-                for hit in relevant_hits
-                if not hit.excluded_due_to_conflict
-            ],
+            eligible_hits,
             limit=self.settings.final_context_chunks,
             max_per_document=2,
         )
@@ -669,6 +679,30 @@ class CareRetriever:
             + 0.12 * hit.freshness_score
             + 0.08 * hit.care_score
         )
+
+    @staticmethod
+    def _rank_by_answerability(
+        hits: Sequence[SearchHit],
+        analysis,
+    ) -> list[SearchHit]:
+        """Stable partition: answer-bearing, then non-answer evidence.
+
+        Call only AFTER relevance filtering and conflict exclusion. A sentence
+        must pass the existing citation-grounded question-specific selector.
+        This changes only presentation-candidate priority, not source scores.
+        """
+        answerable: list[SearchHit] = []
+        other: list[SearchHit] = []
+        for hit in hits:
+            if (
+                review_title_is_relevant(hit, analysis)
+                if is_review_discovery_query(analysis)
+                else select_answer_sentence(hit, analysis) is not None
+            ):
+                answerable.append(hit)
+            else:
+                other.append(hit)
+        return answerable + other
 
     @staticmethod
     def _diversify(

@@ -76,6 +76,12 @@ class QueryAnalyzer:
         if re.search(r"\bgad\b", normalized):
             retrieval_terms.append("generalized anxiety disorder")
 
+        # PubMed abstracts use both disorder name and the established synonym.
+        if re.search(r"\bsocial anxiety disorder\b", normalized):
+            retrieval_terms.append("social phobia")
+        elif re.search(r"\bsocial phobia\b", normalized):
+            retrieval_terms.append("social anxiety disorder")
+
         retrieval_query = normalize_whitespace(
             " ".join(dict.fromkeys(retrieval_terms))
         )
@@ -85,6 +91,8 @@ class QueryAnalyzer:
             for subtype, patterns in _SUBTYPE_PATTERNS.items()
             if any(pattern in padded for pattern in patterns)
         ]
+        if re.search(r"\bgad\b", normalized) and "generalized_anxiety_disorder" not in subtypes:
+            subtypes.append("generalized_anxiety_disorder")
 
         treatments = sorted(extract_treatment_concepts(normalized))
         outcomes = sorted(extract_outcome_concepts(normalized))
