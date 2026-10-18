@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from .answer_selection import InsufficientAnswerEvidence, select_answer_sentence
 from .bibliography import is_review_discovery_query, review_title_is_relevant
-from .models import GeneratedPayload, QueryIntent, RetrievalResult, SearchHit
+from .models import GeneratedPayload, QueryIntent, RelationLabel, RetrievalResult, SearchHit
 from .query import QueryAnalyzer
 
 
@@ -95,6 +95,47 @@ class EvidenceOnlyGenerator:
                 cited_source_ids=list(dict.fromkeys(f"S{index}" for index, _ in distinct)),
                 uncertainty=None,
             )
+
+        # A contradiction question needs a verified pair of distinct retained
+        # sources, not a negative sentence or NLI score in isolation.
+        if re.search(r"\b(?:contradict|conflict|disagree|opposing)\w*\b", question, re.I):
+            by_chunk = {
+                hit.chunk.chunk_id: (index, hit)
+                for index, hit in enumerate(hits, start=1)
+                if not hit.excluded_due_to_conflict
+            }
+            for relation in retrieval.relations:
+                if (
+                    relation.label != RelationLabel.CONTRADICTION
+                    or relation.confidence < 0.85
+                    or relation.left_chunk_id not in by_chunk
+                    or relation.right_chunk_id not in by_chunk
+                ):
+                    continue
+                left_index, left_hit = by_chunk[relation.left_chunk_id]
+                right_index, right_hit = by_chunk[relation.right_chunk_id]
+                if left_hit.chunk.document_id == right_hit.chunk.document_id:
+                    continue
+                left = select_answer_sentence(
+                    left_hit, analysis, allow_conflict_pair=True
+                )
+                right = select_answer_sentence(
+                    right_hit, analysis, allow_conflict_pair=True
+                )
+                if left is None or right is None:
+                    continue
+                negative = re.compile(
+                    r"\b(?:did not|not effective|no (?:significant )?effect|"
+                    r"failed to|not superior|inferior to)\b", re.I
+                )
+                if bool(negative.search(left)) == bool(negative.search(right)):
+                    continue
+                return GeneratedPayload(
+                    answer=f"- {left} [S{left_index}]\n- {right} [S{right_index}]",
+                    cited_source_ids=[f"S{left_index}", f"S{right_index}"],
+                    uncertainty="Evidence conflict detected; clinical interpretation required.",
+                )
+            raise InsufficientAnswerEvidence()
 
         # Several retrieved chunks can belong to one publication. Pick its
         # most self-contained eligible sentence before building citations, so
