@@ -68,6 +68,7 @@ def test_invalid_boolean_is_rejected(project: Path) -> None:
         ("CARE_MIN_DISTINCT_SOURCES", "0", "must be positive"),
         ("CARE_CLINICAL_HALF_LIFE_DAYS", "0", "must be positive"),
         ("CARE_REQUEST_TIMEOUT_SECONDS", "0", "must be positive"),
+        ("CARE_OLLAMA_PRESENTATION_TIMEOUT_SECONDS", "0", "must be positive"),
         ("CARE_RERANK_CANDIDATES", "31", "cannot exceed"),
     ],
 )
@@ -138,3 +139,24 @@ def test_free_form_ollama_answer_generation_is_rejected(project: Path) -> None:
                 "CARE_GENERATOR_PROVIDER": "ollama",
             },
         )
+
+
+def test_evidence_organizer_timeout_respects_environment(project: Path) -> None:
+    from care_anxrag.ollama_organizer import OllamaEvidenceOrganizer
+    from care_anxrag.runtime import _build_generator
+
+    settings = Settings.from_env(
+        project_root=project,
+        environ={
+            "CARE_GENERATOR_PROVIDER": "ollama_evidence",
+            "CARE_OLLAMA_PRESENTATION_TIMEOUT_SECONDS": "5.0",
+        },
+    )
+    generator = _build_generator(settings)
+    assert isinstance(generator, OllamaEvidenceOrganizer)
+    assert generator.timeout_seconds == 5.0
+
+
+def test_evidence_organizer_default_timeout_is_unchanged(project: Path) -> None:
+    settings = Settings.from_env(project_root=project, environ={})
+    assert settings.ollama_presentation_timeout_seconds == 30.0
