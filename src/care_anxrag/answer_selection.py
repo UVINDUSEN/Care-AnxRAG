@@ -125,7 +125,7 @@ _NON_ANSWER_METHOD = re.compile(
     r"(?:electronic |bibliographic )?databases?:|"
     r"study protocol|meeting diagnostic criteria|randomly allocated)\b"
     r"|\b(?:this|the) (?:network )?(?:meta-analysis|systematic review) (?:integrates|examines|explores|evaluates|assesses)\b"
-    r"|^\s*(?:to )?(?:evaluate|assess|investigate|compare|explore|determine|examine)\b"
+    r"|^(?:(?:to )?(?:evaluate|assess|investigate|compare|explore|determine|examine)\b"
     r"|comparing the (?:effectiveness|efficacy|safety)\b)",
     re.I,
 )
