@@ -151,6 +151,15 @@ _NON_ANSWER_METHOD = re.compile(
     r"|comparing the (?:effectiveness|efficacy|safety)\b)",
     re.I,
 )
+# A sentence such as "These medications can be very effective..." relies
+# on an antecedent that is omitted from a one-sentence extractive answer.
+# Exact-substring grounding alone cannot make such a claim self-contained.
+_DEPENDENT_SOURCE_SENTENCE = re.compile(
+    r"^(?:these|those|such|this)\\s+(?:medications?|drugs?|treatments?|interventions?)\\b",
+    re.I,
+)
+
+
 _DISORDER_TREATMENT = re.compile(
     r"\b(?:anxiety disorders?|"
     r"generaliz(?:ed|ised) anxiety disorder|panic disorder|social anxiety disorder|"
@@ -322,6 +331,8 @@ def select_answer_sentence(
     for sentence in candidates:
         # A dangling list label is not a medical answer.
         if sentence.rstrip().endswith(":"):
+            continue
+        if _DEPENDENT_SOURCE_SENTENCE.search(sentence.strip()):
             continue
         if _NON_FINDING.search(sentence):
             continue
