@@ -233,6 +233,7 @@ def test_p07_can_answer_with_direct_diagnostic_criteria_sentence():
 # Synthetic replicas of the observed answer sentences; NOT clinical validation.
 def test_p10_prevalence_without_treatment_evidence_is_not_an_answer():
     q = "What evidence supports psychotherapy for panic disorder?"
+    assert QueryAnalyzer().analyze(q).intent.value == "treatment"
     background = (
         "Panic disorder occurs in 1-3% of adolescents and without treatment "
         "often has a chronic course."
