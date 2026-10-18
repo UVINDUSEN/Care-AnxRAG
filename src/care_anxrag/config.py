@@ -93,6 +93,7 @@ class Settings:
     embedding_dimensions: int = 256
     generator_provider: str = "extractive"
     generation_model: str = "gemma3:4b"
+    ollama_presentation_timeout_seconds: float = 30.0
     ollama_base_url: str = "http://localhost:11434"
 
     reranker_provider: str = "cross_encoder"
@@ -157,6 +158,9 @@ class Settings:
             embedding_dimensions=_as_int(env.get("CARE_EMBEDDING_DIMENSIONS"), 256),
             generator_provider=env.get("CARE_GENERATOR_PROVIDER", "extractive").lower(),
             generation_model=env.get("CARE_GENERATION_MODEL", "gemma3:4b"),
+            ollama_presentation_timeout_seconds=_as_float(
+                env.get("CARE_OLLAMA_PRESENTATION_TIMEOUT_SECONDS"), 30.0
+            ),
             ollama_base_url=env.get("CARE_OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/"),
             reranker_provider=env.get("CARE_RERANKER_PROVIDER", "cross_encoder").lower(),
             reranker_model=env.get(
@@ -266,6 +270,8 @@ class Settings:
             raise ValueError("CARE_MIN_DISTINCT_SOURCES must be positive")
         if self.clinical_half_life_days <= 0 or self.research_half_life_days <= 0:
             raise ValueError("Evidence half-life values must be positive")
+        if self.ollama_presentation_timeout_seconds <= 0:
+            raise ValueError("CARE_OLLAMA_PRESENTATION_TIMEOUT_SECONDS must be positive")
         if self.request_timeout_seconds <= 0:
             raise ValueError("CARE_REQUEST_TIMEOUT_SECONDS must be positive")
         valid_retrieval_modes = {
