@@ -16,6 +16,7 @@ from .clinical_match import (
 )
 from .models import EvidenceLevel, QueryAnalysis, QueryIntent, SearchHit
 from .util import content_tokens, source_sentences
+from .question_requirements import eligible_document_for_question, is_treatment_review_request
 
 
 class InsufficientAnswerEvidence(ValueError):
@@ -46,7 +47,8 @@ _FINDING = re.compile(
     r"not differ|equivalent|most evidence)\b"
     r"|\bevidence (?:supports?|suggests?)\b"
     r"|\bevidence[- ](?:based|supported) (?:treatments?|approaches?|interventions?|options?)\b"
-    r"|\b(?:can|may) help\b",
+    r"|\b(?:can|may) help\b"
+    r"|\b(?:can|may) (?:also )?(?:be )?(?:helpful|useful|beneficial)\b",
     re.I,
 )
 _EFFECTIVENESS_QUESTION = re.compile(
@@ -56,6 +58,26 @@ _EFFECTIVENESS_QUESTION = re.compile(
     re.I,
 )
 _DESCRIPTIVE_QUESTION = re.compile(r"\b(?:discussed|mentioned|listed|delivered|offered|used)\b", re.I)
+_DIRECT_DIAGNOSIS = re.compile(
+    r"\b(?:diagnostic criteria|diagnos(?:is|ed|ing) (?:requires|is based on|by|when)|"
+    r"clinical (?:assessment|interview|evaluation)|"
+    r"DSM[- ]?5(?:[- ]TR)?|ICD[- ]?1[01]|"
+    r"recurrent unexpected panic attacks|"
+    r"persistent (?:concern|worry) about (?:additional|future) panic attacks)\b",
+    re.I,
+)
+_MEDICATION_MENTION = re.compile(
+    r"\b(?:medication|medicine|pharmacolog\w*|antidepressants?|"
+    r"SSRIs?|SNRIs?|selective serotonin reuptake inhibitors?|"
+    r"benzodiazepines?|tricyclic antidepressants?|azapirones?)\b",
+    re.I,
+)
+_COMPARATIVE_FINDING = re.compile(
+    r"\b(?:compar(?:ed|ison) (?:with|to|between)|versus|vs\.?|"
+    r"relative to|difference(?:s)? between|more effective than|"
+    r"less effective than|superior to|inferior to|non[- ]inferior)\b",
+    re.I,
+)
 _RESULT_STATEMENT = re.compile(
     r"\b(?:reduced|improved|benefited|found|observed|showed|results)\b"
     r"|\b(?:did not|had no effect|no (?:significant )?difference|"
@@ -104,7 +126,7 @@ _COMPARISON_REQUEST = re.compile(
 _COMPARATIVE_RESULT = re.compile(
     r"\b(?:compared (?:with|to)|versus|vs\.?|relative to|"
     r"superior|inferior|equivalent|no (?:significant )?difference|"
-    r"equally effective)\b", re.I
+    r"equally effective|more effective than|less effective than)\b", re.I
 )
 _DIAGNOSIS_PROCESS = re.compile(
     r"\b(?:diagnosis (?:requires|involves|is based on)|"
@@ -139,6 +161,7 @@ _DISORDER_TREATMENT = re.compile(
 
 def _requires_clinician_task_evidence(
     sentence: str, hit: SearchHit, analysis: QueryAnalysis,
+    *, allow_conflict_pair: bool = False,
 ) -> bool:
     """Require the sentence to address a clinician's requested evidence task.
 
@@ -211,7 +234,7 @@ def _requires_clinician_task_evidence(
         ):
             return False
 
-    if _CONTRADICTION_REQUEST.search(question):
+    if _CONTRADICTION_REQUEST.search(question) and not allow_conflict_pair:
         # This only selects explicit negative comparative findings; a research
         # gap, a study aim, or a generic "however" is not contradictory evidence.
         if not (
@@ -227,7 +250,11 @@ def _requires_clinician_task_evidence(
 
     return True
 
-def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis, *, required_topic: str | None = None) -> str | None:
+def select_answer_sentence(
+    hit: SearchHit, analysis: QueryAnalysis, *,
+    required_topic: str | None = None,
+    allow_conflict_pair: bool = False,
+) -> str | None:
     """Return an eligible source sentence, retaining its wording and scope.
 
     Treatment/effectiveness questions require a finding or evidence statement,
@@ -235,7 +262,7 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis, *, required_
     must be supported by the sentence itself, not borrowed from another sentence.
     Known population scope must remain in the selected text; otherwise omit it.
     """
-    if hit.excluded_due_to_conflict:
+    if hit.excluded_due_to_conflict or not eligible_document_for_question(hit, analysis):
         return None
 
     candidates = [
@@ -255,7 +282,7 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis, *, required_
     ) or (
         bool(analysis.treatments)
         and analysis.intent == QueryIntent.RECENT_RESEARCH
-    )
+    ) or is_treatment_review_request(analysis)
     evidence_populations = extract_population_concepts(
         f"{hit.chunk.title}\n{hit.chunk.text}"
     )
@@ -298,7 +325,9 @@ def select_answer_sentence(hit: SearchHit, analysis: QueryAnalysis, *, required_
             continue
         if _NON_FINDING.search(sentence):
             continue
-        if not _requires_clinician_task_evidence(sentence, hit, analysis):
+        if not _requires_clinician_task_evidence(
+            sentence, hit, analysis, allow_conflict_pair=allow_conflict_pair
+        ):
             continue
         # Descriptive queries may list or identify an intervention without
         # claiming effectiveness. All other treatment queries require a

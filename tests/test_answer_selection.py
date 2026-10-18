@@ -337,10 +337,6 @@ def test_clinician_queries_do_not_return_topical_non_answers(question, irrelevan
         "CBT and exposure therapy showed no significant difference for panic disorder.",
     ),
     (
-        "What evidence contradicts an intervention recommendation for GAD?",
-        "CBT did not reduce anxiety symptoms in adults with generalized anxiety disorder.",
-    ),
-    (
         "How is panic disorder diagnosed?",
         "Panic disorder diagnosis requires assessment of recurrent unexpected panic attacks.",
     ),
@@ -350,6 +346,15 @@ def test_clinician_questions_can_select_direct_source_sentences(question, statem
     payload = EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
     assert payload.answer == f"- {statement} [S1]"
     assert ClaimGroundingVerifier(HeuristicNliClassifier()).verify(payload, rows).supported
+
+
+def test_single_negative_study_does_not_establish_a_contradiction():
+    question = "What evidence contradicts an intervention recommendation for GAD?"
+    rows = [hit("CBT did not reduce anxiety symptoms in adults with generalized anxiety disorder.")]
+    # A sole negative result does not establish that two studies conflict.
+    # Comparison requires a verified, independently grounded NLI pair.
+    with pytest.raises(ValueError, match="insufficient_answer_evidence"):
+        EvidenceOnlyGenerator().generate(question, rows, retrieval(question, rows))
 
 
 def test_comparison_requires_comparative_outcome_not_two_treatment_mentions():
