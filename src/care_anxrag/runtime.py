@@ -187,7 +187,11 @@ def _build_generator(settings: Settings) -> Generator:
     if settings.generator_provider in {"extractive", "rule"}:
         return EvidenceOnlyGenerator()
     if settings.generator_provider == "ollama_evidence":
-        return OllamaEvidenceOrganizer(settings.ollama_base_url, settings.generation_model)
+        return OllamaEvidenceOrganizer(
+            settings.ollama_base_url,
+            settings.generation_model,
+            timeout_seconds=settings.ollama_presentation_timeout_seconds,
+        )
     raise ValueError(
         f"Unsupported generator provider: {settings.generator_provider}"
     )
