@@ -406,6 +406,18 @@ def select_answer_sentence(
             sentence, re.I,
         ):
             continue
+        # PubMed abstracts sometimes define "panic disorder (PD)" once and
+        # use only "PD" in a later finding. Resolve that *source-defined*
+        # abbreviation for clinical-context matching without changing or
+        # synthesizing the exact sentence returned to the user. Bare "PD"
+        # remains ambiguous (e.g. Parkinson's disease) and is not accepted.
+        context_sentence = sentence
+        if (
+            "panic_disorder" in analysis.anxiety_subtypes
+            and re.search(r"\bPD\b", sentence)
+            and re.search(r"\bpanic disorder\s*\(\s*PD\s*\)", hit.chunk.text, re.I)
+        ):
+            context_sentence = f"{sentence} panic disorder"
         if not supports_explicit_clinical_context(
             analysis.anxiety_subtypes,
             analysis.treatments,
@@ -413,7 +425,7 @@ def select_answer_sentence(
             analysis.outcomes,
             analysis.comorbidities,
             [],
-            sentence,
+            context_sentence,
         ):
             continue
         sentence_populations = extract_population_concepts(sentence)
