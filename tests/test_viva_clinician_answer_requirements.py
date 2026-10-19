@@ -305,3 +305,55 @@ def test_p08_digital_cbt_question_does_not_include_generic_cbt():
     result = generate(q, rows)
     assert result.cited_source_ids == ["S2"]
     assert result.answer == f"- {digital} [S2]"
+
+
+# P12 real-corpus regression: the long-term review explicitly defines
+# "panic disorder (PD)" and later states its result using "PD".
+# Preserve the cited sentence unchanged; only resolve the source's acronym.
+def test_p12_source_defined_pd_abbreviation_preserves_original_evidence_sentence():
+    q = "What is known about long-term pharmacological treatment for panic disorder?"
+    definition = (
+        "This systematic review studied panic disorder (PD) and "
+        "generalized anxiety disorder (GAD)."
+    )
+    finding = (
+        "Our review confirms the usefulness of long-term pharmacological "
+        "treatments for PD and GAD and suggests that they can provide further "
+        "improvement over that obtained during short-term therapy."
+    )
+    result = generate(q, [hit(f"{definition} {finding}")])
+    assert result.answer == f"- {finding} [S1]"
+    assert result.cited_source_ids == ["S1"]
+
+
+@pytest.mark.parametrize("intro", [
+    "This study assessed depressive symptoms.",
+    "This review studied Parkinson's disease (PD).",
+    "PD patients were included in the review.",
+])
+def test_p12_undefined_or_other_pd_abbreviation_remains_rejected(intro):
+    q = "What is known about long-term pharmacological treatment for panic disorder?"
+    finding = (
+        "Long-term pharmacological treatment for PD improved outcomes "
+        "during follow-up."
+    )
+    with pytest.raises(InsufficientAnswerEvidence):
+        generate(q, [hit(f"{intro} {finding}")])
+
+
+def test_p12_source_defined_pd_abbreviation_does_not_override_other_disorder():
+    q = "What is known about long-term pharmacological treatment for social anxiety disorder?"
+    definition = "This review studied panic disorder (PD) and other conditions."
+    finding = "Long-term pharmacological treatment for PD improved outcomes."
+    with pytest.raises(InsufficientAnswerEvidence):
+        generate(q, [hit(f"{definition} {finding}")])
+
+
+def test_p11_symptom_study_does_not_establish_disorder_specific_efficacy():
+    q = "What research supports internet-delivered CBT for social anxiety disorder?"
+    finding = (
+        "The web-only social anxiety CBT program appeared efficacious "
+        "in participants with self-reported symptoms of social anxiety."
+    )
+    with pytest.raises(InsufficientAnswerEvidence):
+        generate(q, [hit(finding)])
