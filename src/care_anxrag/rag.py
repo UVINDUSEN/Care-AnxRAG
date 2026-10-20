@@ -121,6 +121,26 @@ class CareAnxRag:
                 # Keep the original strict verifier contract for all medical
                 # answer claims and existing validation integrations.
                 grounding = self.grounding.verify(generated, context_hits)
+            # Optional LLM paraphrases must pass independent claim-level
+            # verification. If they do not, use the exact eligible evidence
+            # sentences from the existing generator and verify those too.
+            if (
+                self.settings.generator_provider == "ollama_summary"
+                and not grounding.supported
+                and generated.source_evidence
+            ):
+                from .generation import EvidenceOnlyGenerator
+
+                generated = EvidenceOnlyGenerator().generate(
+                    question, context_hits, retrieval
+                )
+                grounding = self.grounding.verify(
+                    generated,
+                    context_hits,
+                    allow_metadata_titles=is_review_discovery_query(
+                        retrieval.query_analysis
+                    ),
+                )
             timings["grounding"] = self._elapsed_ms(
                 stage_started
             )
