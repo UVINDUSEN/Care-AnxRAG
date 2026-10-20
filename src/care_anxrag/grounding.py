@@ -194,14 +194,19 @@ class ClaimGroundingVerifier:
                         ):
                             from .models import RelationLabel
 
-                            relation = self.nli.classify_text_pairs(
-                                [(original, normalized_claim)]
-                            )
-                            supported_paraphrase = (
-                                len(relation) == 1
-                                and relation[0][0] == RelationLabel.ENTAILMENT
-                                and relation[0][1] >= max(self.threshold, 0.95)
-                            )
+                            try:
+                                relation = self.nli.classify_text_pairs(
+                                    [(original, normalized_claim)]
+                                )
+                                supported_paraphrase = (
+                                    len(relation) == 1
+                                    and relation[0][0] == RelationLabel.ENTAILMENT
+                                    and relation[0][1] >= max(self.threshold, 0.95)
+                                )
+                            except Exception:
+                                # Fail closed: a model/runtime error must
+                                # never authorize a paraphrase.
+                                supported_paraphrase = False
                     if not supported_paraphrase:
                         failures.append(
                             GroundingFailure(
