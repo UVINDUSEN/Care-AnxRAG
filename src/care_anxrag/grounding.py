@@ -17,6 +17,7 @@ _PRESENTATION_HEADINGS = frozenset({
     "Diagnostic considerations",
     "Research findings",
     "Evidence",
+    "Clinical evidence summary",
 })
 
 
@@ -98,11 +99,13 @@ class ClaimGroundingVerifier:
         self,
         nli: TextNliClassifier,
         threshold: float = 0.65,
+        allow_entailed_paraphrases: bool = False,
     ):
         if not 0.0 <= threshold <= 1.0:
             raise ValueError("Grounding entailment threshold must be between 0 and 1")
         self.nli = nli
         self.threshold = threshold
+        self.allow_entailed_paraphrases = allow_entailed_paraphrases
 
     def verify(
         self,
@@ -177,13 +180,36 @@ class ClaimGroundingVerifier:
                     and normalized_claim.rstrip(". ") == normalize_whitespace(hit.chunk.title).rstrip(". ")
                 )
                 if normalized_claim not in source_text and not title_match:
-                    failures.append(
-                        GroundingFailure(
-                            claim=claim.text,
-                            citation_id=citation_id,
-                            reason="unsupported_claim_citation",
+                    # Paraphrases are authorized ONLY in explicit opt-in
+                    # synthesis mode, against the exact original selected
+                    # sentence, not arbitrary document context. Existing
+                    # extractive verification remains unchanged.
+                    supported_paraphrase = False
+                    if self.allow_entailed_paraphrases and len(claim.citation_ids) == 1:
+                        original = payload.source_evidence.get(citation_id)
+                        if (
+                            isinstance(original, str)
+                            and original.strip()
+                            and normalize_whitespace(original) in source_text
+                        ):
+                            from .models import RelationLabel
+
+                            relation = self.nli.classify_text_pairs(
+                                [(original, normalized_claim)]
+                            )
+                            supported_paraphrase = (
+                                len(relation) == 1
+                                and relation[0][0] == RelationLabel.ENTAILMENT
+                                and relation[0][1] >= max(self.threshold, 0.95)
+                            )
+                    if not supported_paraphrase:
+                        failures.append(
+                            GroundingFailure(
+                                claim=claim.text,
+                                citation_id=citation_id,
+                                reason="unsupported_claim_citation",
+                            )
                         )
-                    )
 
         if failures:
             priority = (
