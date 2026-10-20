@@ -5,7 +5,7 @@ from time import perf_counter
 from .answer_selection import InsufficientAnswerEvidence
 from .bibliography import is_review_discovery_query
 from .config import Settings
-from .generation import Generator
+from .generation import EvidenceOnlyGenerator, Generator
 from .grounding import ClaimGroundingVerifier
 from .models import (
     AnswerResponse,
@@ -121,6 +121,26 @@ class CareAnxRag:
                 # Keep the original strict verifier contract for all medical
                 # answer claims and existing validation integrations.
                 grounding = self.grounding.verify(generated, context_hits)
+            if (
+                not grounding.supported
+                and self.settings.generator_provider == "ollama_summary"
+            ):
+                # Never release an unverified medical paraphrase. Recover the
+                # previously verified exact-source answer on semantic failures.
+                # Existing extractive/organizer behavior remains unchanged.
+                fallback = EvidenceOnlyGenerator().generate(
+                    question, context_hits, retrieval
+                )
+                fallback_grounding = self.grounding.verify(
+                    fallback,
+                    context_hits,
+                    allow_metadata_titles=is_review_discovery_query(
+                        retrieval.query_analysis
+                    ),
+                )
+                if fallback_grounding.supported:
+                    generated = fallback
+                    grounding = fallback_grounding
             timings["grounding"] = self._elapsed_ms(
                 stage_started
             )
