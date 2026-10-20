@@ -14,6 +14,7 @@ from .embeddings import (
 )
 from .generation import EvidenceOnlyGenerator, Generator
 from .ollama_organizer import OllamaEvidenceOrganizer
+from .ollama_summarizer import OllamaClinicalSummarizer
 from .grounding import ClaimGroundingVerifier
 from .ingestion import IngestionService
 from .models import HealthStatus, SourceConfig
@@ -188,6 +189,8 @@ def _build_generator(settings: Settings) -> Generator:
         return EvidenceOnlyGenerator()
     if settings.generator_provider == "ollama_evidence":
         return OllamaEvidenceOrganizer(settings.ollama_base_url, settings.generation_model)
+    if settings.generator_provider == "ollama_summary":
+        return OllamaClinicalSummarizer(settings.ollama_base_url, settings.generation_model)
     raise ValueError(
         f"Unsupported generator provider: {settings.generator_provider}"
     )
