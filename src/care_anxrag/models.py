@@ -245,6 +245,9 @@ class GeneratedPayload(StrictModel):
     answer: str
     cited_source_ids: list[str]
     uncertainty: str | None = None
+    # Original selected sentences used to validate optional paraphrases.
+    # Never replace citation lookup with arbitrary model-provided text.
+    source_evidence: dict[str, str] = Field(default_factory=dict)
 
 
 class AnswerResponse(StrictModel):
