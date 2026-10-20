@@ -176,6 +176,7 @@ class OllamaClinicalSummarizer:
                 claim["source_id"] for claim in claims
             )),
             uncertainty=source_output.uncertainty,
+            source_evidence=dict(statements),
         )
 
     @staticmethod
