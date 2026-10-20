@@ -245,6 +245,9 @@ class GeneratedPayload(StrictModel):
     answer: str
     cited_source_ids: list[str]
     uncertainty: str | None = None
+    # Only used by the opt-in summary generator to bind paraphrases to
+    # the actual, preselected verbatim evidence sentences.
+    source_evidence: dict[str, str] = Field(default_factory=dict)
 
 
 class AnswerResponse(StrictModel):
