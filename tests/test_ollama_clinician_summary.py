@@ -55,7 +55,7 @@ def test_natural_summary_keeps_citation_and_preselected_evidence(monkeypatch):
         QUESTION, hits, retrieval(QUESTION, hits)
     )
     assert payload.answer.startswith("Research summary\n\n")
-    assert SUMMARY in payload.answer
+    assert SUMMARY.rstrip(".") + " [S1]." in payload.answer
     assert "[S1]" in payload.answer
     assert payload.cited_source_ids == ["S1"]
     assert payload.source_evidence == {"S1": SOURCE}
@@ -77,17 +77,16 @@ def test_legacy_exact_source_verifier_stays_strict(monkeypatch):
     assert not ClaimGroundingVerifier(StubNli()).verify(payload, hits).supported
 
 
-def test_unrelated_claim_is_rejected_by_entailment_checker(monkeypatch):
+def test_unrelated_claim_fails_conservative_guard_before_nli(monkeypatch):
     _mock_reply(monkeypatch, "CBT may prevent all future panic attacks.")
     hits = [hit(SOURCE)]
     payload = OllamaClinicalSummarizer("http://localhost:11434", "gemma3:4b").generate(
         QUESTION, hits, retrieval(QUESTION, hits)
     )
-    verifier = ClaimGroundingVerifier(
-        StubNli(RelationLabel.NEUTRAL, 0.99),
-        allow_entailed_paraphrases=True,
-    )
-    assert not verifier.verify(payload, hits).supported
+    # Panic-disorder content is not in the original anxiety source statement.
+    # The generator itself must reject the candidate and fall back unchanged.
+    assert payload.answer == "- " + SOURCE + " [S1]"
+    assert payload.source_evidence == {}
 
 
 def test_new_number_and_missing_negation_are_rejected_before_grounding(monkeypatch):
